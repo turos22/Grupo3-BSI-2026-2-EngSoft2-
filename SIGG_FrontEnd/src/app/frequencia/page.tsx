@@ -60,6 +60,7 @@ export default function PaginaFrequencia() {
   const [lancando, setLancando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
   const [vendo, setVendo] = useState(false)
+  const [editando, setEditando] = useState(false) // lançamento pendente: reabre a chamada daquela tropa e data
   const [pronto, setPronto] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -110,6 +111,7 @@ export default function PaginaFrequencia() {
       setChamadas(await listarChamadas(tropaCod === TODAS ? undefined : tropaCod, ano ?? ANO_ATUAL))
       setAviso(sucesso)
       setLancando(false)
+      setEditando(false)
     } catch (falha) {
       setErro(mensagemDeErro(falha, falhaPadrao))
     } finally {
@@ -118,8 +120,15 @@ export default function PaginaFrequencia() {
     }
   }
 
-  const lancar = (data: string, itens: ItemParaGravar[]) =>
-    executar(() => registrarChamada(tropaCod, data, itens), 'Frequência lançada.', 'Não foi possível lançar a frequência.')
+  const lancar = (tropaAlvo: number) => (data: string, itens: ItemParaGravar[]) =>
+    executar(() => registrarChamada(tropaAlvo, data, itens), 'Frequência lançada.', 'Não foi possível lançar a frequência.')
+
+  // Duplo clique e botão: chamada pendente abre para editar; lançada abre só para ver
+  const abrir = (c: ResumoChamada | null) => {
+    if (!c) return
+    if (pendente(c)) setEditando(true)
+    else setVendo(true)
+  }
 
   const cancelarLancamento = () => chamada
     ? executar(() => cancelarChamada(chamada.tropa.cod, chamada.data), 'Lançamento cancelado: a chamada ficou pendente de lançamento. Lance de novo pelo botão "Lançar frequência".', 'Não foi possível cancelar o lançamento.')
@@ -151,7 +160,16 @@ export default function PaginaFrequencia() {
 
       {vendo && chamada && <VerChamada tropa={chamada.tropa} data={chamada.data} aoFechar={() => setVendo(false)} />}
       {lancando && tropa && (
-        <FormChamada tropa={tropa} aoConfirmar={lancar} aoCancelar={() => setLancando(false)} carregando={salvando} />
+        <FormChamada tropa={tropa} aoConfirmar={lancar(tropa.cod)} aoCancelar={() => setLancando(false)} carregando={salvando} />
+      )}
+      {editando && chamada && (
+        <FormChamada
+          tropa={chamada.tropa}
+          dataFixa={chamada.data}
+          aoConfirmar={lancar(chamada.tropa.cod)}
+          aoCancelar={() => setEditando(false)}
+          carregando={salvando}
+        />
       )}
 
       <DialogoConfirmacao
@@ -176,14 +194,16 @@ export default function PaginaFrequencia() {
         aoClicarLinha={(c) => setSelecionada(chaveDe(c))}
         aoDuploClique={(c) => {
           setSelecionada(chaveDe(c))
-          setVendo(true)
+          abrir(c)
         }}
         chaveSelecionada={selecionada}
         linhasPorPagina={10}
         rodape={(
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
             <BotaoOk rotulo="Lançar frequência" tipo="button" desabilitado={!tropa} aoClicar={() => setLancando(true)} />
-            <BotaoOk rotulo="Ver presenças" tipo="button" desabilitado={!chamada} aoClicar={() => setVendo(true)} />
+            {chamada && pendente(chamada)
+              ? <BotaoOk rotulo="Editar" tipo="button" desabilitado={!dentroDoPrazo(chamada.data)} aoClicar={() => abrir(chamada)} />
+              : <BotaoOk rotulo="Ver presenças" tipo="button" desabilitado={!chamada} aoClicar={() => abrir(chamada)} />}
             <BotaoCancelar rotulo="Cancelar lançamento" desabilitado={!podeCancelar} aoClicar={() => setCancelando(true)} />
           </Box>
         )}

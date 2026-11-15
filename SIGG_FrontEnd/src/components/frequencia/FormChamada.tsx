@@ -13,14 +13,15 @@ import { mensagemDeErro } from '@/data/utils/erros'
 
 interface FormChamadaProps {
   tropa: Tropa
+  dataFixa?: string // presente = edição de um lançamento pendente: tropa e data já definidas
   aoConfirmar: (data: string, itens: ItemParaGravar[]) => void
   aoCancelar: () => void
   carregando?: boolean
 }
 
 // Lançamento de chamada. Não há edição: lançamento errado é cancelado na grade e lançado de novo.
-export default function FormChamada({ tropa, aoConfirmar, aoCancelar, carregando }: FormChamadaProps) {
-  const [data, setData] = useState(HOJE)
+export default function FormChamada({ tropa, dataFixa, aoConfirmar, aoCancelar, carregando }: FormChamadaProps) {
+  const [data, setData] = useState(dataFixa ?? HOJE)
   const [itens, setItens] = useState<ItemChamada[]>([])
   const [status, setStatus] = useState<Record<number, StatusPresenca>>({})
   const [jaExiste, setJaExiste] = useState(false)
@@ -55,8 +56,8 @@ export default function FormChamada({ tropa, aoConfirmar, aoCancelar, carregando
 
   return (
     <Formulario
-      titulo={`Lançar frequência: ${tropa.nome}`}
-      rotuloOk="Lançar"
+      titulo={dataFixa ? `Editar lançamento pendente: ${tropa.nome}` : `Lançar frequência: ${tropa.nome}`}
+      rotuloOk={dataFixa ? 'Salvar' : 'Lançar'}
       aoConfirmar={confirmar}
       aoCancelar={aoCancelar}
       carregando={carregando}
@@ -71,6 +72,7 @@ export default function FormChamada({ tropa, aoConfirmar, aoCancelar, carregando
         rotulo="Data"
         valor={data}
         aoMudar={setData}
+        desabilitado={!!dataFixa}
         minimo={LIMITE_LANCAMENTO}
         maximo={HOJE}
         obrigatorio
