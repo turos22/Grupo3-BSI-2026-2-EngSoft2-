@@ -2042,6 +2042,8 @@ COMMIT;
 -- * frequencia: é a presença do escoteiro numa data, sem depender de atividade_especial;
 --   as linhas novas gravam atividade_especial_atv_cod NULL.
 -- * frequencia: um único registro por escoteiro e data.
+-- * frequencia.freq_status ganha 'C' = lançamento cancelado, pendente de lançamento (não conta no percentual;
+--   é sobrescrito quando a chamada é lançada de novo). Sem DDL: a coluna é VARCHAR(1) sem CHECK.
 -- ============================================================================
 BEGIN;
 

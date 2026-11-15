@@ -1,22 +1,25 @@
 import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
+import Chip from '@mui/material/Chip'
 import Box from '@mui/material/Box'
 import { BotaoCancelar, BotaoOk } from '@/components/formulario/Botoes'
 import CampoInteiro from '@/components/formulario/CampoInteiro'
 import CampoSelecao from '@/components/formulario/CampoSelecao'
 import DialogoConfirmacao from '@/components/formulario/DialogoConfirmacao'
 import FormChamada from '@/components/frequencia/FormChamada'
+import VerChamada from '@/components/frequencia/VerChamada'
 import Grade, { type ColunaGrade } from '@/components/grade/Grade'
 import { useSessao } from '@/data/contexts/SessaoContexto'
 import type { ResumoChamada } from '@/data/models/Chamada'
 import type Tropa from '@/data/models/Tropa'
 import {
-  atualizarChamada, buscarMinhaTropa, excluirChamada, listarChamadas, registrarChamada, type ItemParaGravar,
+  buscarMinhaTropa, cancelarChamada, listarChamadas, registrarChamada, type ItemParaGravar,
 } from '@/data/services/frequencia'
 import { AUTENTICACAO_ATIVA } from '@/data/services/sessao'
 import { listarTropas } from '@/data/services/tropa'
 import { formatarData } from '@/data/utils/datas'
 import { mensagemDeErro } from '@/data/utils/erros'
+import { dentroDoPrazo, PRAZO_DIAS } from '@/data/utils/prazoFrequencia'
 
 const TODAS = 0
 const ANO_ATUAL = new Date().getFullYear()
@@ -24,10 +27,26 @@ const ANO_ATUAL = new Date().getFullYear()
 const colunas: ColunaGrade<ResumoChamada>[] = [
   { id: 'data', titulo: 'Data', valor: (c) => c.data, renderizar: (c) => formatarData(c.data) },
   { id: 'tropa', titulo: 'Tropa', valor: (c) => c.tropa.nome },
-  { id: 'presentes', titulo: 'Presentes', valor: (c) => c.presentes, renderizar: (c) => `${c.presentes} de ${c.total}` },
+  {
+    id: 'situacao',
+    titulo: 'Situação',
+    valor: (c) => (pendente(c) ? 'Pendente de lançamento' : 'Lançada'),
+    renderizar: (c) => (pendente(c)
+      ? <Chip size="small" label="Pendente de lançamento" color="warning" variant="outlined" />
+      : <Chip size="small" label="Lançada" color="success" variant="outlined" />),
+  },
+  { id: 'presentes', titulo: 'Presentes', valor: (c) => c.presentes, renderizar: (c) => (pendente(c) ? '—' : `${c.presentes} de ${c.total}`) },
+  {
+    id: 'prazo',
+    titulo: 'Prazo',
+    valor: (c) => (!dentroDoPrazo(c.data) ? 'Prazo encerrado' : pendente(c) ? 'Lance de novo' : 'Ainda pode cancelar'),
+  },
 ]
 
 const chaveDe = (c: ResumoChamada) => `${c.tropa.cod}|${c.data}`
+
+// Lançamento cancelado: os registros continuam, mas pendentes (C), esperando ser lançados de novo
+const pendente = (c: ResumoChamada) => c.total === 0 && c.pendentes > 0
 
 export default function PaginaFrequencia() {
   const { usuario } = useSessao()
@@ -38,8 +57,10 @@ export default function PaginaFrequencia() {
   const [ano, setAno] = useState<number | null>(ANO_ATUAL)
   const [chamadas, setChamadas] = useState<ResumoChamada[]>([])
   const [selecionada, setSelecionada] = useState<string | null>(null)
-  const [formulario, setFormulario] = useState<'nova' | 'edicao' | null>(null)
-  const [excluindo, setExcluindo] = useState(false)
+  const [lancando, setLancando] = useState(false)
+  const [cancelando, setCancelando] = useState(false)
+  const [vendo, setVendo] = useState(false)
+  const [editando, setEditando] = useState(false) // lançamento pendente: reabre a chamada daquela tropa e data
   const [pronto, setPronto] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -89,35 +110,37 @@ export default function PaginaFrequencia() {
       await acao()
       setChamadas(await listarChamadas(tropaCod === TODAS ? undefined : tropaCod, ano ?? ANO_ATUAL))
       setAviso(sucesso)
-      setFormulario(null)
+      setLancando(false)
+      setEditando(false)
     } catch (falha) {
       setErro(mensagemDeErro(falha, falhaPadrao))
     } finally {
       setSalvando(false)
-      setExcluindo(false)
+      setCancelando(false)
     }
   }
 
-  const salvar = (data: string, itens: ItemParaGravar[]) => {
-    const alvo = formulario === 'edicao' && chamada ? chamada.tropa.cod : tropaCod
-    return executar(
-      () => (formulario === 'edicao' ? atualizarChamada(alvo, data, itens) : registrarChamada(alvo, data, itens)),
-      'Frequência registrada.',
-      'Não foi possível registrar a frequência.',
-    )
+  const lancar = (tropaAlvo: number) => (data: string, itens: ItemParaGravar[]) =>
+    executar(() => registrarChamada(tropaAlvo, data, itens), 'Frequência lançada.', 'Não foi possível lançar a frequência.')
+
+  // Duplo clique e botão: chamada pendente abre para editar; lançada abre só para ver
+  const abrir = (c: ResumoChamada | null) => {
+    if (!c) return
+    if (pendente(c)) setEditando(true)
+    else setVendo(true)
   }
 
-  const excluir = () => chamada
-    ? executar(() => excluirChamada(chamada.tropa.cod, chamada.data), 'Chamada excluída.', 'Não foi possível excluir a chamada.')
+  const cancelarLancamento = () => chamada
+    ? executar(() => cancelarChamada(chamada.tropa.cod, chamada.data), 'Lançamento cancelado: a chamada ficou pendente de lançamento. Lance de novo pelo botão "Lançar frequência".', 'Não foi possível cancelar o lançamento.')
     : Promise.resolve()
 
-  const tropaDoFormulario = formulario === 'edicao' ? chamada?.tropa ?? null : tropa
+  const podeCancelar = !!chamada && !pendente(chamada) && dentroDoPrazo(chamada.data)
 
   return (
     <main className="pagina">
       <header>
         <h1>Registro de frequência</h1>
-        <p className="subtitulo">Chamada por tropa e data: um registro por escoteiro em cada dia</p>
+        <p className="subtitulo">Duplo clique numa chamada mostra as presenças. Lance a chamada da tropa; se errar, cancele o lançamento e lance de novo (até {PRAZO_DIAS} dias da data)</p>
       </header>
 
       {erro && <Alert severity="error" onClose={() => setErro('')}>{erro}</Alert>}
@@ -135,21 +158,28 @@ export default function PaginaFrequencia() {
         <CampoInteiro rotulo="Ano" valor={ano} aoMudar={setAno} minimo={2000} maximo={2100} />
       </Box>
 
-      {formulario && tropaDoFormulario && (
+      {vendo && chamada && <VerChamada tropa={chamada.tropa} data={chamada.data} aoFechar={() => setVendo(false)} />}
+      {lancando && tropa && (
+        <FormChamada tropa={tropa} aoConfirmar={lancar(tropa.cod)} aoCancelar={() => setLancando(false)} carregando={salvando} />
+      )}
+      {editando && chamada && (
         <FormChamada
-          tropa={tropaDoFormulario}
-          dataInicial={formulario === 'edicao' ? chamada?.data : undefined}
-          aoConfirmar={salvar}
-          aoCancelar={() => setFormulario(null)}
+          tropa={chamada.tropa}
+          dataFixa={chamada.data}
+          aoConfirmar={lancar(chamada.tropa.cod)}
+          aoCancelar={() => setEditando(false)}
           carregando={salvando}
         />
       )}
 
       <DialogoConfirmacao
-        aberto={excluindo}
-        mensagem={<>Excluir a chamada de <strong>{chamada?.tropa.nome}</strong> em <strong>{chamada ? formatarData(chamada.data) : ''}</strong>?</>}
-        aoConfirmar={excluir}
-        aoCancelar={() => setExcluindo(false)}
+        aberto={cancelando}
+        titulo="Cancelar lançamento"
+        rotuloConfirmar="Cancelar lançamento"
+        rotuloCancelar="Voltar"
+        mensagem={<>Cancelar o lançamento de <strong>{chamada?.tropa.nome}</strong> em <strong>{chamada ? formatarData(chamada.data) : ''}</strong>?</>}
+        aoConfirmar={cancelarLancamento}
+        aoCancelar={() => setCancelando(false)}
         carregando={salvando}
       />
 
@@ -164,19 +194,21 @@ export default function PaginaFrequencia() {
         aoClicarLinha={(c) => setSelecionada(chaveDe(c))}
         aoDuploClique={(c) => {
           setSelecionada(chaveDe(c))
-          setFormulario('edicao')
+          abrir(c)
         }}
         chaveSelecionada={selecionada}
         linhasPorPagina={10}
         rodape={(
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
-            <BotaoOk rotulo="Nova chamada" tipo="button" desabilitado={!tropa} aoClicar={() => setFormulario('nova')} />
-            <BotaoOk rotulo="Editar" tipo="button" desabilitado={!chamada} aoClicar={() => setFormulario('edicao')} />
-            <BotaoCancelar rotulo="Excluir" desabilitado={!chamada} aoClicar={() => setExcluindo(true)} />
+            <BotaoOk rotulo="Lançar frequência" tipo="button" desabilitado={!tropa} aoClicar={() => setLancando(true)} />
+            {chamada && pendente(chamada)
+              ? <BotaoOk rotulo="Editar" tipo="button" desabilitado={!dentroDoPrazo(chamada.data)} aoClicar={() => abrir(chamada)} />
+              : <BotaoOk rotulo="Ver presenças" tipo="button" desabilitado={!chamada} aoClicar={() => abrir(chamada)} />}
+            <BotaoCancelar rotulo="Cancelar lançamento" desabilitado={!podeCancelar} aoClicar={() => setCancelando(true)} />
           </Box>
         )}
       />
-      {!tropa && !restrito && <p className="subtitulo">Escolha uma tropa para fazer uma nova chamada.</p>}
+      {!tropa && !restrito && <p className="subtitulo">Escolha uma tropa para lançar a frequência.</p>}
     </main>
   )
 }

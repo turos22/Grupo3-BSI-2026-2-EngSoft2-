@@ -4,6 +4,8 @@ import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import { BotaoCancelar, BotaoOk } from '@/components/formulario/Botoes'
+import CampoSelecao from '@/components/formulario/CampoSelecao'
+import CampoTexto from '@/components/formulario/CampoTexto'
 import DialogoConfirmacao from '@/components/formulario/DialogoConfirmacao'
 import Grade, { type ColunaGrade } from '@/components/grade/Grade'
 import FormPessoa from '@/components/membros/FormPessoa'
@@ -18,6 +20,7 @@ import {
 } from '@/data/services/membro'
 import { AUTENTICACAO_ATIVA } from '@/data/services/sessao'
 import { listarTropas } from '@/data/services/tropa'
+import { combinaBusca } from '@/data/utils/busca'
 import { membroParaDados } from '@/data/utils/conversores'
 import { mensagemDeErro } from '@/data/utils/erros'
 import { formatarData } from '@/data/utils/datas'
@@ -55,6 +58,10 @@ const colunas: ColunaGrade<Membro>[] = [
 
 type Confirmacao = 'excluir' | 'chefe' | 'financeiro' | null
 
+const TODOS = ''
+const PAPEIS = ['Presidente', 'Chefe', 'Financeiro', 'Escoteiro', 'Responsável', 'Voluntário']
+const SEM_PAPEL = 'Sem papel'
+
 export default function PaginaMembros() {
   const { usuario } = useSessao()
   const [membros, setMembros] = useState<Membro[]>([])
@@ -67,8 +74,13 @@ export default function PaginaMembros() {
   const [formulario, setFormulario] = useState<'pessoa' | 'promocao' | null>(null)
   const [editando, setEditando] = useState(false)
   const [confirmacao, setConfirmacao] = useState<Confirmacao>(null)
+  const [busca, setBusca] = useState('')
+  const [papel, setPapel] = useState<string>(TODOS)
 
   const selecionado = membros.find((m) => m.mem_cod === selecionadoCod) ?? null
+  const filtrados = membros.filter((m) =>
+    combinaBusca(busca, m.nome, m.CPF, m.email, m.telefone, m.cidade)
+    && (papel === TODOS || (papel === SEM_PAPEL ? m.papeis.length === 0 : m.papeis.includes(papel))))
   // Só o presidente (ou o admin) promove; com a autenticação desligada (desenvolvimento) tudo é liberado
   const podePromover = !AUTENTICACAO_ATIVA || !!usuario?.perfis.some((p) => p === 'PRESIDENTE' || p === 'ADMIN')
 
@@ -174,11 +186,21 @@ export default function PaginaMembros() {
         />
       )}
 
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 360px))', gap: 2 }}>
+        <CampoTexto rotulo="Buscar" valor={busca} aoMudar={setBusca} placeholder="Nome, CPF, e-mail, telefone ou cidade" />
+        <CampoSelecao
+          rotulo="Papel"
+          valor={papel}
+          opcoes={[{ valor: TODOS, rotulo: 'Todos os papéis' }, ...PAPEIS.map((p) => ({ valor: p, rotulo: p })), { valor: SEM_PAPEL, rotulo: SEM_PAPEL }]}
+          aoMudar={(v) => setPapel(v ?? TODOS)}
+        />
+      </Box>
+
       <Grade
         titulo="Pessoas ativas"
-        subtitulo={`${membros.length} ${membros.length === 1 ? 'pessoa' : 'pessoas'}`}
+        subtitulo={`${filtrados.length} de ${membros.length} ${membros.length === 1 ? 'pessoa' : 'pessoas'}`}
         colunas={colunas}
-        linhas={membros}
+        linhas={filtrados}
         chave={(m) => m.mem_cod}
         carregando={carregando}
         textoVazio="Nenhuma pessoa encontrada."
