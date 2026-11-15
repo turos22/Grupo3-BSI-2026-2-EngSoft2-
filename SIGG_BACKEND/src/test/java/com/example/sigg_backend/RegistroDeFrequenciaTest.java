@@ -34,7 +34,10 @@ import com.jayway.jsonpath.JsonPath;
 @Transactional
 class RegistroDeFrequenciaTest {
 
-    private static final String DIA_LIVRE = "2026-11-07";
+    // Lançar e cancelar só vale para chamadas de hoje até 10 dias atrás
+    private static final String DIA_LIVRE = LocalDate.now().minusDays(2).toString();
+    private static final String MENSAGEM_PRAZO_LANCAR = "Só é possível lançar frequência dos últimos 10 dias";
+    private static final String MENSAGEM_PRAZO_CANCELAR = "O lançamento só pode ser cancelado até 10 dias depois da data da chamada";
     private static final String MENSAGEM_DUPLICADA = "Já existe frequência desta tropa nesta data. Edite a chamada existente.";
 
     @Autowired
@@ -59,8 +62,8 @@ class RegistroDeFrequenciaTest {
         return mvc.perform(post("/frequencias/chamada").contentType(MediaType.APPLICATION_JSON).content(json));
     }
 
-    private ResultActions atualizar(String json) throws Exception {
-        return mvc.perform(put("/frequencias/chamada").contentType(MediaType.APPLICATION_JSON).content(json));
+    private ResultActions cancelar(int tropa, String data) throws Exception {
+        return mvc.perform(delete("/frequencias/chamada?tropa=" + tropa + "&data=" + data));
     }
 
     // Registros da data dos escoteiros ATUAIS da tropa (os desligados ficam de fora, como na chamada)
@@ -104,12 +107,6 @@ class RegistroDeFrequenciaTest {
     }
 
     @Test
-    void registrarEmDataQueJaTemRegistroDoDumpRecusa() throws Exception {
-        registrar(chamada(2, "2026-08-01", escoteirosDaTropa(2), "P")).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.erro").value(MENSAGEM_DUPLICADA));
-    }
-
-    @Test
     void dataStatusEItensInvalidosSaoRecusados() throws Exception {
         List<Integer> tropa2 = escoteirosDaTropa(2);
         registrar(chamada(2, LocalDate.now().plusDays(1).toString(), tropa2, "P")).andExpect(status().isBadRequest())
@@ -127,40 +124,44 @@ class RegistroDeFrequenciaTest {
     }
 
     @Test
-    void atualizarMudaOStatusEOutrosFicamComoEstavam() throws Exception {
+    void lancarForaDoPrazoDeDezDiasRecusa() throws Exception {
+        registrar(chamada(2, "2026-08-01", escoteirosDaTropa(2), "P")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erro").value(MENSAGEM_PRAZO_LANCAR));
+        registrar(chamada(2, LocalDate.now().minusDays(11).toString(), escoteirosDaTropa(2), "P"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.erro").value(MENSAGEM_PRAZO_LANCAR));
+        registrar(chamada(2, LocalDate.now().minusDays(10).toString(), escoteirosDaTropa(2), "P"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void naoHaMaisEdicaoDaChamada() throws Exception {
+        mvc.perform(put("/frequencias/chamada").contentType(MediaType.APPLICATION_JSON)
+                .content(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "P"))).andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
+    void cancelarApagaOLancamentoDaTropaEPermiteLancarDeNovo() throws Exception {
+        registrar(chamada(1, DIA_LIVRE, escoteirosDaTropa(1), "P")).andExpect(status().isCreated());
+        registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "P")).andExpect(status().isCreated());
+        int tropa1Antes = registros(DIA_LIVRE, 1);
+
+        cancelar(2, DIA_LIVRE).andExpect(status().isOk()).andExpect(jsonPath("$.mensagem").exists());
+        assertEquals(0, registros(DIA_LIVRE, 2));
+        assertEquals(tropa1Antes, registros(DIA_LIVRE, 1));
+        cancelar(2, DIA_LIVRE).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.erro").value("Não há frequência dessa tropa nessa data"));
+
+        registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "F")).andExpect(status().isCreated());
+        assertEquals("F", jdbc.queryForObject("SELECT freq_status FROM frequencia WHERE escoteiro_esc_cod = 2007"
+                + " AND freq_data = DATE '" + DIA_LIVRE + "'", String.class));
+    }
+
+    @Test
+    void cancelarForaDoPrazoRecusaEMantemOsRegistros() throws Exception {
         int antes = registros("2026-08-01", 2);
-        atualizar(chamada(2, "2026-08-01", List.of(2007), "F")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.itens[?(@.esc_cod==2007)].status").value(hasItem("F")));
-        assertEquals("F", jdbc.queryForObject(
-                "SELECT freq_status FROM frequencia WHERE escoteiro_esc_cod = 2007 AND freq_data = DATE '2026-08-01'", String.class));
+        cancelar(2, "2026-08-01").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erro").value(MENSAGEM_PRAZO_CANCELAR));
         assertEquals(antes, registros("2026-08-01", 2));
-    }
-
-    @Test
-    void atualizarQuemEntrouDepoisCriaOSeuRegistro() throws Exception {
-        jdbc.update("DELETE FROM frequencia WHERE escoteiro_esc_cod = 2007 AND freq_data = DATE '2026-08-01'");
-        atualizar(chamada(2, "2026-08-01", List.of(2007), "J")).andExpect(status().isOk());
-        assertEquals("J", jdbc.queryForObject(
-                "SELECT freq_status FROM frequencia WHERE escoteiro_esc_cod = 2007 AND freq_data = DATE '2026-08-01'", String.class));
-    }
-
-    @Test
-    void atualizarDataSemNenhumRegistroDevolve404() throws Exception {
-        atualizar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "P")).andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.erro").value("Não há frequência dessa tropa nessa data"));
-    }
-
-    @Test
-    void excluirApagaSoOsRegistrosDaTropaNaData() throws Exception {
-        int tropa1Antes = registros("2026-08-01", 1);
-        mvc.perform(delete("/frequencias/chamada?tropa=2&data=2026-08-01")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensagem").exists());
-        assertEquals(0, registros("2026-08-01", 2));
-        assertEquals(tropa1Antes, registros("2026-08-01", 1));
-        assertEquals(1, jdbc.queryForObject( // Bruno (esc 2025) saiu do grupo: o histórico dele fica
-                "SELECT count(*) FROM frequencia WHERE escoteiro_esc_cod = 2025 AND freq_data = DATE '2026-08-01'", Integer.class));
-        mvc.perform(delete("/frequencias/chamada?tropa=2&data=2026-08-01")).andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.erro").value("Não há frequência dessa tropa nessa data"));
     }
 
     @Test

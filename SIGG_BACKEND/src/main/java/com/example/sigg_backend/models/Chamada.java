@@ -13,6 +13,9 @@ import com.example.sigg_backend.db.util.Conexao;
 // daquela data para os escoteiros que estão hoje nas patrulhas da tropa.
 public class Chamada {
 
+    // Não há edição: um lançamento errado é cancelado e lançado de novo, só para chamadas de hoje até 10 dias atrás
+    public static final int PRAZO_DIAS = 10;
+
     private Tropa tropa;
     private LocalDate data;
     private List<ItemChamada> itens = new ArrayList<>();
@@ -24,6 +27,8 @@ public class Chamada {
             return "Data é obrigatória";
         if (data.isAfter(LocalDate.now()))
             return "Data não pode ser futura";
+        if (!dentroDoPrazo(data))
+            return "Só é possível lançar frequência dos últimos " + PRAZO_DIAS + " dias";
         if (itens == null || itens.isEmpty())
             return "Informe ao menos um escoteiro";
         Set<Integer> vistos = new HashSet<>();
@@ -34,6 +39,10 @@ public class Chamada {
                 return "Escoteiro " + item.getEsc_cod() + " aparece mais de uma vez";
         }
         return null;
+    }
+
+    public static boolean dentroDoPrazo(LocalDate data) {
+        return !data.isBefore(LocalDate.now().minusDays(PRAZO_DIAS));
     }
 
     // Monta a chamada a partir do banco: todos os escoteiros atuais da tropa, com o status gravado na data

@@ -73,21 +73,15 @@ public class FrequenciaFacade {
     }
 
     @Transactional
-    public Chamada atualizar(Conexao conexao, Chamada chamada) {
-        autorizacao.exigirPerfil(conexao, OPERADORES);
-        prepararChamada(conexao, chamada);
-        if (!chamada.temRegistro(conexao))
-            throw new NaoEncontradoException(SEM_REGISTRO);
-        return gravar(conexao, chamada);
-    }
-
-    @Transactional
     public Map<String, String> excluir(Conexao conexao, int troCod, LocalDate data) {
         autorizacao.exigirPerfil(conexao, OPERADORES);
         exigirTropa(conexao, troCod);
         Chamada chamada = new Chamada();
         chamada.setTropa(tropaExistente(conexao, troCod));
         chamada.setData(data);
+        if (!Chamada.dentroDoPrazo(data))
+            throw new RegraNegocioException("O lançamento só pode ser cancelado até " + Chamada.PRAZO_DIAS
+                    + " dias depois da data da chamada");
         if (!chamada.temRegistro(conexao))
             throw new NaoEncontradoException(SEM_REGISTRO);
         if (!chamada.apagar(conexao))
