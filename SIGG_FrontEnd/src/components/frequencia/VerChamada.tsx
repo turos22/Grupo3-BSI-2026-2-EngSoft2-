@@ -4,14 +4,14 @@ import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Formulario from '@/components/formulario/Formulario'
-import type { ItemChamada, StatusPresenca } from '@/data/models/Chamada'
+import type { ItemChamada, StatusGravado } from '@/data/models/Chamada'
 import type Tropa from '@/data/models/Tropa'
 import { consultarChamada } from '@/data/services/frequencia'
 import { formatarData } from '@/data/utils/datas'
 import { mensagemDeErro } from '@/data/utils/erros'
 
-const ROTULO: Record<StatusPresenca, string> = { P: 'Presente', F: 'Falta', J: 'Justificada' }
-const COR: Record<StatusPresenca, 'success' | 'error' | 'warning'> = { P: 'success', F: 'error', J: 'warning' }
+const ROTULO: Record<StatusGravado, string> = { P: 'Presente', F: 'Falta', J: 'Justificada', C: 'Pendente de lançamento' }
+const COR: Record<StatusGravado, 'success' | 'error' | 'warning' | 'default'> = { P: 'success', F: 'error', J: 'warning', C: 'default' }
 
 interface VerChamadaProps {
   tropa: Tropa
@@ -34,7 +34,7 @@ export default function VerChamada({ tropa, data, aoFechar }: VerChamadaProps) {
     }
   }, [tropa.cod, data])
 
-  const contar = (status: StatusPresenca) => itens?.filter((i) => i.status === status).length ?? 0
+  const contar = (status: StatusGravado) => itens?.filter((i) => i.status === status).length ?? 0
 
   return (
     <Formulario titulo={`Presenças: ${tropa.nome} em ${formatarData(data)}`} aoConfirmar={aoFechar} rotuloOk="Fechar" largura="md">
@@ -45,6 +45,7 @@ export default function VerChamada({ tropa, data, aoFechar }: VerChamadaProps) {
             <Chip label={`${contar('P')} presentes`} color="success" variant="outlined" />
             <Chip label={`${contar('F')} faltas`} color="error" variant="outlined" />
             <Chip label={`${contar('J')} justificadas`} color="warning" variant="outlined" />
+            {contar('C') > 0 && <Chip label={`${contar('C')} pendentes de lançamento`} variant="outlined" />}
           </Stack>
           {itens.map((item) => (
             <Box key={item.esc_cod} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>

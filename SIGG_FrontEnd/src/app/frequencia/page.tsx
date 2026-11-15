@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
+import Chip from '@mui/material/Chip'
 import Box from '@mui/material/Box'
 import { BotaoCancelar, BotaoOk } from '@/components/formulario/Botoes'
 import CampoInteiro from '@/components/formulario/CampoInteiro'
@@ -12,7 +13,7 @@ import { useSessao } from '@/data/contexts/SessaoContexto'
 import type { ResumoChamada } from '@/data/models/Chamada'
 import type Tropa from '@/data/models/Tropa'
 import {
-  buscarMinhaTropa, excluirChamada, listarChamadas, registrarChamada, type ItemParaGravar,
+  buscarMinhaTropa, cancelarChamada, listarChamadas, registrarChamada, type ItemParaGravar,
 } from '@/data/services/frequencia'
 import { AUTENTICACAO_ATIVA } from '@/data/services/sessao'
 import { listarTropas } from '@/data/services/tropa'
@@ -26,11 +27,26 @@ const ANO_ATUAL = new Date().getFullYear()
 const colunas: ColunaGrade<ResumoChamada>[] = [
   { id: 'data', titulo: 'Data', valor: (c) => c.data, renderizar: (c) => formatarData(c.data) },
   { id: 'tropa', titulo: 'Tropa', valor: (c) => c.tropa.nome },
-  { id: 'presentes', titulo: 'Presentes', valor: (c) => c.presentes, renderizar: (c) => `${c.presentes} de ${c.total}` },
-  { id: 'prazo', titulo: 'Cancelamento', valor: (c) => (dentroDoPrazo(c.data) ? 'Ainda pode cancelar' : 'Prazo encerrado') },
+  {
+    id: 'situacao',
+    titulo: 'Situação',
+    valor: (c) => (pendente(c) ? 'Pendente de lançamento' : 'Lançada'),
+    renderizar: (c) => (pendente(c)
+      ? <Chip size="small" label="Pendente de lançamento" color="warning" variant="outlined" />
+      : <Chip size="small" label="Lançada" color="success" variant="outlined" />),
+  },
+  { id: 'presentes', titulo: 'Presentes', valor: (c) => c.presentes, renderizar: (c) => (pendente(c) ? '—' : `${c.presentes} de ${c.total}`) },
+  {
+    id: 'prazo',
+    titulo: 'Prazo',
+    valor: (c) => (!dentroDoPrazo(c.data) ? 'Prazo encerrado' : pendente(c) ? 'Lance de novo' : 'Ainda pode cancelar'),
+  },
 ]
 
 const chaveDe = (c: ResumoChamada) => `${c.tropa.cod}|${c.data}`
+
+// Lançamento cancelado: os registros continuam, mas pendentes (C), esperando ser lançados de novo
+const pendente = (c: ResumoChamada) => c.total === 0 && c.pendentes > 0
 
 export default function PaginaFrequencia() {
   const { usuario } = useSessao()
@@ -106,10 +122,10 @@ export default function PaginaFrequencia() {
     executar(() => registrarChamada(tropaCod, data, itens), 'Frequência lançada.', 'Não foi possível lançar a frequência.')
 
   const cancelarLancamento = () => chamada
-    ? executar(() => excluirChamada(chamada.tropa.cod, chamada.data), 'Lançamento cancelado. Você pode lançar de novo.', 'Não foi possível cancelar o lançamento.')
+    ? executar(() => cancelarChamada(chamada.tropa.cod, chamada.data), 'Lançamento cancelado: a chamada ficou pendente de lançamento. Lance de novo pelo botão "Lançar frequência".', 'Não foi possível cancelar o lançamento.')
     : Promise.resolve()
 
-  const podeCancelar = !!chamada && dentroDoPrazo(chamada.data)
+  const podeCancelar = !!chamada && !pendente(chamada) && dentroDoPrazo(chamada.data)
 
   return (
     <main className="pagina">

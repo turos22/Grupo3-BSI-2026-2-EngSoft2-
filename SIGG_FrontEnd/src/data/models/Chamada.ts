@@ -1,7 +1,10 @@
 import type Tropa from '@/data/models/Tropa'
 
-// P presente, F falta, J falta justificada; null = ainda não marcado nessa data
+// P presente, F falta, J falta justificada: o que se lança
 export type StatusPresenca = 'P' | 'F' | 'J'
+
+// O que pode estar gravado: além do lançado, C = lançamento cancelado, pendente de lançamento
+export type StatusGravado = StatusPresenca | 'C'
 
 // Espelha models/ItemChamada.java
 export interface ItemChamada {
@@ -9,7 +12,7 @@ export interface ItemChamada {
   mem_cod: number
   nome: string
   patrulha: string
-  status: StatusPresenca | null
+  status: StatusGravado | null // null = escoteiro sem registro nessa data
   percentual_ano: number // 0 a 100: presenças sobre os registros do escoteiro no ano
 }
 
@@ -25,5 +28,6 @@ export interface ResumoChamada {
   tropa: Tropa
   data: string
   presentes: number
-  total: number
+  total: number // registros lançados (P, F, J)
+  pendentes: number // registros cancelados aguardando novo lançamento (C)
 }

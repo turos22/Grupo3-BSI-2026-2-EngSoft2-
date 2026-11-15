@@ -38,7 +38,8 @@ export default function FormChamada({ tropa, aoConfirmar, aoCancelar, carregando
       .then((chamada) => {
         if (!ativo) return
         setItens(chamada.itens)
-        setJaExiste(chamada.itens.some((i) => i.status !== null))
+        // só registros C (lançamento cancelado) não impedem lançar de novo
+        setJaExiste(chamada.itens.some((i) => i.status !== null && i.status !== 'C'))
         setStatus(Object.fromEntries(chamada.itens.map((i) => [i.esc_cod, 'P' as StatusPresenca]))) // começa todo mundo presente
         setErro('')
       })

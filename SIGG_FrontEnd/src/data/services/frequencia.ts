@@ -32,6 +32,7 @@ export function registrarChamada(tropa: number, data: string, itens: ItemParaGra
   return requisitar<Chamada>('/frequencias/chamada', { method: 'POST', body: corpo(tropa, data, itens) })
 }
 
-export function excluirChamada(tropa: number, data: string): Promise<{ mensagem: string }> {
-  return requisitar(`/frequencias/chamada?tropa=${tropa}&data=${data}`, { method: 'DELETE' })
+// Cancelar não apaga: os registros ficam "pendente de lançamento" até a chamada ser lançada de novo
+export function cancelarChamada(tropa: number, data: string): Promise<{ mensagem: string }> {
+  return requisitar(`/frequencias/chamada/cancelar?tropa=${tropa}&data=${data}`, { method: 'POST' })
 }
