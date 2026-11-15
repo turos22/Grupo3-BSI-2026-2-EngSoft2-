@@ -6,6 +6,7 @@ import CampoInteiro from '@/components/formulario/CampoInteiro'
 import CampoSelecao from '@/components/formulario/CampoSelecao'
 import DialogoConfirmacao from '@/components/formulario/DialogoConfirmacao'
 import FormChamada from '@/components/frequencia/FormChamada'
+import VerChamada from '@/components/frequencia/VerChamada'
 import Grade, { type ColunaGrade } from '@/components/grade/Grade'
 import { useSessao } from '@/data/contexts/SessaoContexto'
 import type { ResumoChamada } from '@/data/models/Chamada'
@@ -42,6 +43,7 @@ export default function PaginaFrequencia() {
   const [selecionada, setSelecionada] = useState<string | null>(null)
   const [lancando, setLancando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
+  const [vendo, setVendo] = useState(false)
   const [pronto, setPronto] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -113,7 +115,7 @@ export default function PaginaFrequencia() {
     <main className="pagina">
       <header>
         <h1>Registro de frequência</h1>
-        <p className="subtitulo">Lance a chamada da tropa; se errar, cancele o lançamento e lance de novo (até {PRAZO_DIAS} dias da data)</p>
+        <p className="subtitulo">Duplo clique numa chamada mostra as presenças. Lance a chamada da tropa; se errar, cancele o lançamento e lance de novo (até {PRAZO_DIAS} dias da data)</p>
       </header>
 
       {erro && <Alert severity="error" onClose={() => setErro('')}>{erro}</Alert>}
@@ -131,6 +133,7 @@ export default function PaginaFrequencia() {
         <CampoInteiro rotulo="Ano" valor={ano} aoMudar={setAno} minimo={2000} maximo={2100} />
       </Box>
 
+      {vendo && chamada && <VerChamada tropa={chamada.tropa} data={chamada.data} aoFechar={() => setVendo(false)} />}
       {lancando && tropa && (
         <FormChamada tropa={tropa} aoConfirmar={lancar} aoCancelar={() => setLancando(false)} carregando={salvando} />
       )}
@@ -155,11 +158,16 @@ export default function PaginaFrequencia() {
         carregando={carregando}
         textoVazio="Nenhuma chamada registrada neste período."
         aoClicarLinha={(c) => setSelecionada(chaveDe(c))}
+        aoDuploClique={(c) => {
+          setSelecionada(chaveDe(c))
+          setVendo(true)
+        }}
         chaveSelecionada={selecionada}
         linhasPorPagina={10}
         rodape={(
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
             <BotaoOk rotulo="Lançar frequência" tipo="button" desabilitado={!tropa} aoClicar={() => setLancando(true)} />
+            <BotaoOk rotulo="Ver presenças" tipo="button" desabilitado={!chamada} aoClicar={() => setVendo(true)} />
             <BotaoCancelar rotulo="Cancelar lançamento" desabilitado={!podeCancelar} aoClicar={() => setCancelando(true)} />
           </Box>
         )}
