@@ -56,7 +56,7 @@ class PermissaoDeFrequenciaTest {
         assertEquals(8, facade.consultar(conexao, 2, DIA).getItens().size());
         assertEquals(8, facade.registrar(conexao, chamada(2)).getItens().size());
         assertEquals(8, facade.percentuais(conexao, 2, 2026).size());
-        facade.excluir(conexao, 2, DIA);
+        facade.cancelar(conexao, 2, DIA);
     }
 
     @Test
@@ -64,7 +64,7 @@ class PermissaoDeFrequenciaTest {
         ComoUsuario.entrar(7, "CHEFE");
         assertThrows(AcessoNegadoException.class, () -> facade.consultar(conexao, 1, DIA));
         assertThrows(AcessoNegadoException.class, () -> facade.registrar(conexao, chamada(1)));
-        assertThrows(AcessoNegadoException.class, () -> facade.excluir(conexao, 1, LocalDate.of(2026, 8, 1)));
+        assertThrows(AcessoNegadoException.class, () -> facade.cancelar(conexao, 1, LocalDate.of(2026, 8, 1)));
         assertThrows(AcessoNegadoException.class, () -> facade.percentuais(conexao, 1, 2026));
         assertThrows(AcessoNegadoException.class, () -> facade.listar(conexao, 1, 2026));
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM frequencia WHERE freq_data = ?", Integer.class, DIA));

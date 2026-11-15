@@ -6,7 +6,6 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -63,10 +62,11 @@ public class FrequenciaController {
         return chamada;
     }
 
-    @DeleteMapping("/chamada")
-    public ResponseEntity<Object> excluir(@RequestParam int tropa,
-                                          @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data){
-        return ResponseEntity.ok(facade.excluir(conexao, tropa, data));
+    // Cancelar não apaga (os registros ficam pendentes de lançamento), por isso é POST e não DELETE
+    @PostMapping("/chamada/cancelar")
+    public ResponseEntity<Object> cancelar(@RequestParam int tropa,
+                                           @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data){
+        return ResponseEntity.ok(facade.cancelar(conexao, tropa, data));
     }
 
     @GetMapping("/percentuais")

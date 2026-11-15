@@ -63,7 +63,7 @@ class RegistroDeFrequenciaTest {
     }
 
     private ResultActions cancelar(int tropa, String data) throws Exception {
-        return mvc.perform(delete("/frequencias/chamada?tropa=" + tropa + "&data=" + data));
+        return mvc.perform(post("/frequencias/chamada/cancelar?tropa=" + tropa + "&data=" + data));
     }
 
     // Registros da data dos escoteiros ATUAIS da tropa (os desligados ficam de fora, como na chamada)
@@ -139,21 +139,37 @@ class RegistroDeFrequenciaTest {
                 .content(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "P"))).andExpect(status().isMethodNotAllowed());
     }
 
+    private int comStatus(String data, int tropa, String status) {
+        return jdbc.queryForObject("SELECT count(*) FROM frequencia f JOIN escoteiro e ON e.esc_cod = f.escoteiro_esc_cod"
+                + " JOIN membro m ON m.mem_cod = e.mem_cod JOIN patrulha p ON p.pat_cod = e.patrulha_pat_cod2"
+                + " WHERE f.freq_data = DATE '" + data + "' AND p.tropa_tro_cod = ? AND m.mem_dt_fim IS NULL"
+                + " AND f.freq_status = ?", Integer.class, tropa, status);
+    }
+
+    // Cancelar não apaga: os registros ficam com o status C (pendente de lançamento) até serem lançados de novo
     @Test
-    void cancelarApagaOLancamentoDaTropaEPermiteLancarDeNovo() throws Exception {
+    void cancelarDeixaPendenteDeLancamentoEPermiteLancarDeNovo() throws Exception {
         registrar(chamada(1, DIA_LIVRE, escoteirosDaTropa(1), "P")).andExpect(status().isCreated());
         registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "P")).andExpect(status().isCreated());
-        int tropa1Antes = registros(DIA_LIVRE, 1);
+        int tropa1Antes = comStatus(DIA_LIVRE, 1, "P");
 
         cancelar(2, DIA_LIVRE).andExpect(status().isOk()).andExpect(jsonPath("$.mensagem").exists());
-        assertEquals(0, registros(DIA_LIVRE, 2));
-        assertEquals(tropa1Antes, registros(DIA_LIVRE, 1));
+        assertEquals(8, registros(DIA_LIVRE, 2)); // nada foi apagado
+        assertEquals(8, comStatus(DIA_LIVRE, 2, "C"));
+        assertEquals(tropa1Antes, comStatus(DIA_LIVRE, 1, "P"));
+        mvc.perform(get("/frequencias?tropa=2&ano=" + DIA_LIVRE.substring(0, 4))).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].data").value(DIA_LIVRE))
+                .andExpect(jsonPath("$[0].total").value(0))
+                .andExpect(jsonPath("$[0].pendentes").value(8));
+        mvc.perform(get("/frequencias/chamada?tropa=2&data=" + DIA_LIVRE)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.itens[?(@.status != 'C')]").isEmpty());
         cancelar(2, DIA_LIVRE).andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.erro").value("Não há frequência dessa tropa nessa data"));
+                .andExpect(jsonPath("$.erro").value("Não há frequência lançada dessa tropa nessa data"));
 
         registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "F")).andExpect(status().isCreated());
-        assertEquals("F", jdbc.queryForObject("SELECT freq_status FROM frequencia WHERE escoteiro_esc_cod = 2007"
-                + " AND freq_data = DATE '" + DIA_LIVRE + "'", String.class));
+        assertEquals(8, comStatus(DIA_LIVRE, 2, "F"));
+        assertEquals(0, comStatus(DIA_LIVRE, 2, "C"));
+        assertEquals(8, registros(DIA_LIVRE, 2)); // lançar de novo reaproveita as linhas, não duplica
     }
 
     @Test
@@ -173,7 +189,8 @@ class RegistroDeFrequenciaTest {
         MvcResult criado = mvc.perform(post("/escoteiros").contentType(MediaType.APPLICATION_JSON).content(escoteiro))
                 .andExpect(status().isCreated()).andReturn();
         int escCod = JsonPath.read(criado.getResponse().getContentAsString(StandardCharsets.UTF_8), "$.esc_cod");
-        String[][] registros = {{"2026-01-10", "P"}, {"2026-01-17", "P"}, {"2026-01-24", "F"}};
+        // o registro C (lançamento cancelado, pendente) não conta: 2 P sobre 3 lançados
+        String[][] registros = {{"2026-01-10", "P"}, {"2026-01-17", "P"}, {"2026-01-24", "F"}, {"2026-01-31", "C"}};
         for (String[] r : registros)
             jdbc.update("INSERT INTO frequencia (freq_cod, freq_data, freq_status, escoteiro_esc_cod, atividade_especial_atv_cod)"
                     + " VALUES ((SELECT MAX(freq_cod) + 1 FROM frequencia), DATE '" + r[0] + "', '" + r[1] + "', ?, NULL)", escCod);

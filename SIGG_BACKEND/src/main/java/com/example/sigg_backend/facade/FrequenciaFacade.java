@@ -20,7 +20,7 @@ public class FrequenciaFacade {
 
     private static final List<String> OPERADORES = List.of(UsuarioLogado.ADMIN, UsuarioLogado.PRESIDENTE, UsuarioLogado.CHEFE);
     private static final List<String> SEM_RESTRICAO = List.of(UsuarioLogado.ADMIN, UsuarioLogado.PRESIDENTE);
-    private static final String SEM_REGISTRO = "Não há frequência dessa tropa nessa data";
+    private static final String SEM_REGISTRO = "Não há frequência lançada dessa tropa nessa data";
 
     private final AutorizacaoFacade autorizacao;
 
@@ -67,13 +67,14 @@ public class FrequenciaFacade {
     public Chamada registrar(Conexao conexao, Chamada chamada) {
         autorizacao.exigirPerfil(conexao, OPERADORES);
         prepararChamada(conexao, chamada);
-        if (chamada.temRegistro(conexao))
+        if (chamada.temLancamento(conexao))
             throw new RegraNegocioException("Já existe frequência desta tropa nesta data. Edite a chamada existente.");
         return gravar(conexao, chamada);
     }
 
     @Transactional
-    public Map<String, String> excluir(Conexao conexao, int troCod, LocalDate data) {
+    // Cancelar deixa os registros como "pendente de lançamento" (C); a chamada pode ser lançada de novo no prazo
+    public Map<String, String> cancelar(Conexao conexao, int troCod, LocalDate data) {
         autorizacao.exigirPerfil(conexao, OPERADORES);
         exigirTropa(conexao, troCod);
         Chamada chamada = new Chamada();
@@ -82,11 +83,12 @@ public class FrequenciaFacade {
         if (!Chamada.dentroDoPrazo(data))
             throw new RegraNegocioException("O lançamento só pode ser cancelado até " + Chamada.PRAZO_DIAS
                     + " dias depois da data da chamada");
-        if (!chamada.temRegistro(conexao))
+        if (!chamada.temLancamento(conexao))
             throw new NaoEncontradoException(SEM_REGISTRO);
-        if (!chamada.apagar(conexao))
-            throw new IllegalStateException("Não foi possível excluir a frequência");
-        return Map.of("mensagem", "Frequência de " + chamada.getTropa().getNome() + " em " + data + " excluída");
+        if (!chamada.cancelar(conexao))
+            throw new IllegalStateException("Não foi possível cancelar o lançamento");
+        return Map.of("mensagem", "Lançamento de " + chamada.getTropa().getNome() + " em " + data
+                + " cancelado: fica pendente de lançamento");
     }
 
     private Chamada gravar(Conexao conexao, Chamada chamada) {

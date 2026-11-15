@@ -6,10 +6,12 @@ import java.util.Set;
 import com.example.sigg_backend.db.dao.FrequenciaDAO;
 import com.example.sigg_backend.db.util.Conexao;
 
-// Presença de um escoteiro numa data: P presente, F falta, J falta justificada
+// Presença de um escoteiro numa data: P presente, F falta, J falta justificada.
+// C = lançamento cancelado, pendente de lançamento: não conta no percentual e é sobrescrito quando a chamada é lançada de novo.
 public class Frequencia {
 
-    public static final Set<String> STATUS_VALIDOS = Set.of("P", "F", "J");
+    public static final Set<String> STATUS_VALIDOS = Set.of("P", "F", "J"); // o que se lança; C só o cancelamento grava
+    public static final String CANCELADO = "C";
 
     private int freq_cod;
     private int esc_cod;

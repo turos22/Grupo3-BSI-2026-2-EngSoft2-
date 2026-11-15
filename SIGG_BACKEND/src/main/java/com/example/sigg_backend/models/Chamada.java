@@ -58,8 +58,8 @@ public class Chamada {
         return new FrequenciaDAO().itensDaTropa(conexao, tropa.getCod(), null, ano);
     }
 
-    public boolean temRegistro(Conexao conexao) {
-        return new FrequenciaDAO().existeRegistro(conexao, tropa.getCod(), data);
+    public boolean temLancamento(Conexao conexao) {
+        return new FrequenciaDAO().existeLancamento(conexao, tropa.getCod(), data);
     }
 
     public Integer primeiroEscoteiroDeOutraTropa(Conexao conexao) {
@@ -74,8 +74,8 @@ public class Chamada {
         return true;
     }
 
-    public boolean apagar(Conexao conexao) {
-        return new FrequenciaDAO().apagarDaTropa(conexao, tropa.getCod(), data);
+    public boolean cancelar(Conexao conexao) {
+        return new FrequenciaDAO().cancelarDaTropa(conexao, tropa.getCod(), data);
     }
 
     public Tropa getTropa() {

@@ -6,22 +6,24 @@ import java.util.List;
 import com.example.sigg_backend.db.dao.FrequenciaDAO;
 import com.example.sigg_backend.db.util.Conexao;
 
-// Uma chamada já feita, na grade: tropa, data e quantos estavam presentes dos que foram marcados
+// Uma chamada na grade: tropa, data, presentes sobre os lançados e quantos estão pendentes (lançamento cancelado)
 public class ResumoChamada {
 
     private Tropa tropa;
     private LocalDate data;
     private int presentes;
     private int total;
+    private int pendentes;
 
     public ResumoChamada() {
     }
 
-    public ResumoChamada(Tropa tropa, LocalDate data, int presentes, int total) {
+    public ResumoChamada(Tropa tropa, LocalDate data, int presentes, int total, int pendentes) {
         this.tropa = tropa;
         this.data = data;
         this.presentes = presentes;
         this.total = total;
+        this.pendentes = pendentes;
     }
 
     public List<ResumoChamada> listar(Conexao conexao, Integer troCod, int ano) {
@@ -58,5 +60,13 @@ public class ResumoChamada {
 
     public void setTotal(int total) {
         this.total = total;
+    }
+
+    public int getPendentes() {
+        return pendentes;
+    }
+
+    public void setPendentes(int pendentes) {
+        this.pendentes = pendentes;
     }
 }
