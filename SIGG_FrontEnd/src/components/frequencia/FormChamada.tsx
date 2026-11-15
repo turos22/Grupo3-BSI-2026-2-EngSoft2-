@@ -8,55 +8,54 @@ import Formulario from '@/components/formulario/Formulario'
 import type { ItemChamada, StatusPresenca } from '@/data/models/Chamada'
 import type Tropa from '@/data/models/Tropa'
 import { consultarChamada, type ItemParaGravar } from '@/data/services/frequencia'
+import { HOJE, LIMITE_LANCAMENTO, PRAZO_DIAS } from '@/data/utils/prazoFrequencia'
 import { mensagemDeErro } from '@/data/utils/erros'
-
-const HOJE = new Date().toLocaleDateString('sv-SE')
 
 interface FormChamadaProps {
   tropa: Tropa
-  dataInicial?: string // presente = edição: a data não muda
   aoConfirmar: (data: string, itens: ItemParaGravar[]) => void
   aoCancelar: () => void
   carregando?: boolean
 }
 
-export default function FormChamada({ tropa, dataInicial, aoConfirmar, aoCancelar, carregando }: FormChamadaProps) {
-  const edicao = dataInicial !== undefined
-  const [data, setData] = useState(dataInicial ?? HOJE)
+// Lançamento de chamada. Não há edição: lançamento errado é cancelado na grade e lançado de novo.
+export default function FormChamada({ tropa, aoConfirmar, aoCancelar, carregando }: FormChamadaProps) {
+  const [data, setData] = useState(HOJE)
   const [itens, setItens] = useState<ItemChamada[]>([])
-  const [status, setStatus] = useState<Record<number, StatusPresenca | null>>({})
+  const [status, setStatus] = useState<Record<number, StatusPresenca>>({})
   const [jaExiste, setJaExiste] = useState(false)
   const [erro, setErro] = useState('')
 
+  const erroData = !data ? 'Informe a data'
+    : data > HOJE ? 'A data não pode ser futura'
+    : data < LIMITE_LANCAMENTO ? `Só é possível lançar frequência dos últimos ${PRAZO_DIAS} dias`
+    : undefined
+
   useEffect(() => {
-    if (!data || data > HOJE) return
+    if (erroData) return
     let ativo = true
     consultarChamada(tropa.cod, data)
       .then((chamada) => {
         if (!ativo) return
-        const existente = chamada.itens.some((i) => i.status !== null)
         setItens(chamada.itens)
-        setJaExiste(!edicao && existente)
-        // chamada nova começa com todos presentes; na edição, quem não foi marcado fica sem status
-        setStatus(Object.fromEntries(chamada.itens.map((i) => [i.esc_cod, edicao ? i.status : (i.status ?? 'P')])))
+        setJaExiste(chamada.itens.some((i) => i.status !== null))
+        setStatus(Object.fromEntries(chamada.itens.map((i) => [i.esc_cod, 'P' as StatusPresenca]))) // começa todo mundo presente
         setErro('')
       })
       .catch((falha: unknown) => ativo && setErro(mensagemDeErro(falha, 'Não foi possível carregar os escoteiros.')))
     return () => {
       ativo = false
     }
-  }, [tropa.cod, data, edicao])
+  }, [tropa.cod, data, erroData])
 
   function confirmar() {
-    const marcados = itens.flatMap((i) => (status[i.esc_cod] ? [{ esc_cod: i.esc_cod, status: status[i.esc_cod] as StatusPresenca }] : []))
-    if (marcados.length > 0) aoConfirmar(data, marcados)
+    if (itens.length > 0) aoConfirmar(data, itens.map((i) => ({ esc_cod: i.esc_cod, status: status[i.esc_cod] ?? 'P' })))
   }
-
-  const erroData = data > HOJE ? 'A data não pode ser futura' : undefined
 
   return (
     <Formulario
-      titulo={edicao ? `Chamada de ${tropa.nome}` : `Nova chamada: ${tropa.nome}`}
+      titulo={`Lançar frequência: ${tropa.nome}`}
+      rotuloOk="Lançar"
       aoConfirmar={confirmar}
       aoCancelar={aoCancelar}
       carregando={carregando}
@@ -64,10 +63,21 @@ export default function FormChamada({ tropa, dataInicial, aoConfirmar, aoCancela
       largura="md"
     >
       {erro && <Alert severity="error">{erro}</Alert>}
-      {jaExiste && <Alert severity="warning">Já existe frequência desta tropa nesta data. Edite a chamada existente.</Alert>}
-      <CampoData rotulo="Data" valor={data} aoMudar={setData} maximo={HOJE} desabilitado={edicao} obrigatorio erro={erroData} />
+      {jaExiste && !erroData && (
+        <Alert severity="warning">Já existe frequência desta tropa nesta data. Para refazer, cancele o lançamento na grade e lance de novo.</Alert>
+      )}
+      <CampoData
+        rotulo="Data"
+        valor={data}
+        aoMudar={setData}
+        minimo={LIMITE_LANCAMENTO}
+        maximo={HOJE}
+        obrigatorio
+        erro={erroData}
+        ajuda={`De hoje até ${PRAZO_DIAS} dias atrás`}
+      />
       {itens.length === 0 && !erro && !erroData && <span>Nenhum escoteiro ativo nesta tropa.</span>}
-      {itens.map((item) => (
+      {!erroData && !jaExiste && itens.map((item) => (
         <Box key={item.esc_cod} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
           <Box>
             <strong>{item.nome}</strong>
@@ -78,8 +88,8 @@ export default function FormChamada({ tropa, dataInicial, aoConfirmar, aoCancela
           <ToggleButtonGroup
             exclusive
             size="small"
-            value={status[item.esc_cod] ?? null}
-            onChange={(_, novo: StatusPresenca | null) => setStatus((atual) => ({ ...atual, [item.esc_cod]: novo ?? atual[item.esc_cod] }))}
+            value={status[item.esc_cod] ?? 'P'}
+            onChange={(_, novo: StatusPresenca | null) => novo && setStatus((atual) => ({ ...atual, [item.esc_cod]: novo }))}
             aria-label={`Presença de ${item.nome}`}
           >
             <ToggleButton value="P" color="success">Presente</ToggleButton>

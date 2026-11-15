@@ -32,10 +32,6 @@ export function registrarChamada(tropa: number, data: string, itens: ItemParaGra
   return requisitar<Chamada>('/frequencias/chamada', { method: 'POST', body: corpo(tropa, data, itens) })
 }
 
-export function atualizarChamada(tropa: number, data: string, itens: ItemParaGravar[]): Promise<Chamada> {
-  return requisitar<Chamada>('/frequencias/chamada', { method: 'PUT', body: corpo(tropa, data, itens) })
-}
-
 export function excluirChamada(tropa: number, data: string): Promise<{ mensagem: string }> {
   return requisitar(`/frequencias/chamada?tropa=${tropa}&data=${data}`, { method: 'DELETE' })
 }
