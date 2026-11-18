@@ -1,98 +1,150 @@
 package com.example.sigg_backend.controllers;
 
+import com.example.sigg_backend.db.util.Conexao;
+import com.example.sigg_backend.facade.AutorizacaoFacade;
+import com.example.sigg_backend.facade.NaoEncontradoException;
+import com.example.sigg_backend.facade.RegraNegocioException;
 import com.example.sigg_backend.models.CategoriaMensalidade;
+import com.example.sigg_backend.models.UsuarioLogado;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
-import com.example.sigg_backend.db.util.Conexao;
 
 @RestController
 @RequestMapping("/categorias-mensalidade")
 public class CategoriaMensalidadeController {
 
     private final Conexao conexao;
-    public CategoriaMensalidadeController(Conexao conexao) {
+    private final AutorizacaoFacade autorizacao;
+
+    public CategoriaMensalidadeController(Conexao conexao, AutorizacaoFacade autorizacao) {
         this.conexao = conexao;
+        this.autorizacao = autorizacao;
     }
 
     @GetMapping
-    public List<CategoriaMensalidade> listar(@RequestParam(required = false) String filtro) {
-        return CategoriaMensalidade.listar(conexao, filtro);
+    public ResponseEntity<Object> listar(
+            @RequestParam(value = "filtro", required = false, defaultValue = "") String filtro,
+            @RequestParam(value = "busca", required = false, defaultValue = "") String busca
+    ) {
+        autorizacao.exigirDiretoria(conexao);
+        String termo = (filtro != null && !filtro.isBlank()) ? filtro : busca;
+        CategoriaMensalidade model = new CategoriaMensalidade();
+        List<CategoriaMensalidade> lista = (termo == null || termo.isBlank())
+                ? model.listar(conexao)
+                : model.pesquisar(conexao, termo);
+        return ResponseEntity.ok(lista);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Object> buscarPorId(@PathVariable int id) {
-        CategoriaMensalidade cat = CategoriaMensalidade.buscarPorId(conexao, id);
-        if (cat == null) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "Categoria não encontrada."));
+        autorizacao.exigirDiretoria(conexao);
+        CategoriaMensalidade categoria = new CategoriaMensalidade().buscar(conexao, id);
+        if (categoria == null) {
+            throw new NaoEncontradoException("Categoria de mensalidade não encontrada.");
         }
-        return ResponseEntity.ok(cat);
+        return ResponseEntity.ok(categoria);
     }
 
     @PostMapping
-    public ResponseEntity<Object> gravar(@RequestBody CategoriaMensalidade categoria) {
-        if (categoria.getDescricao() == null || categoria.getDescricao().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "A descrição da categoria é obrigatória."));
-        }
-        if (categoria.getDescricao().trim().length() > 100) { // cat_mens_desc é VARCHAR(100)
-            return ResponseEntity.badRequest().body(Map.of("erro", "A descrição deve ter até 100 caracteres."));
-        }
-        if (categoria.getValor() == null || categoria.getValor().doubleValue() < 0) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "O valor informado é inválido."));
-        }
-        if (categoria.getQtd_irmao() < 0) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "A quantidade de irmãos não pode ser negativa."));
-        }
-        if (CategoriaMensalidade.descricaoJaExiste(conexao, categoria.getDescricao(), 0)) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "Já existe uma categoria de mensalidade com essa descrição."));
+    public ResponseEntity<Object> criar(@RequestBody Map<String, Object> corpo) {
+        autorizacao.exigirPerfil(conexao, List.of(UsuarioLogado.ADMIN, UsuarioLogado.FINANCEIRO));
+        if (corpo == null) {
+            throw new RegraNegocioException("Dados da categoria são obrigatórios.");
         }
 
-        boolean sucesso = categoria.gravar(conexao);
-        if (sucesso) {
-            return ResponseEntity.ok(Map.of("mensagem", "Categoria gravada com sucesso!"));
+        CategoriaMensalidade categoria = montarCategoria(0, corpo);
+        String problema = categoria.validar();
+        if (problema != null) {
+            throw new RegraNegocioException(problema);
         }
-        return ResponseEntity.badRequest().body(Map.of("erro", "Não foi possível gravar a categoria."));
+        if (categoria.existeDescricao(conexao, categoria.getDescricao(), 0)) {
+            throw new RegraNegocioException("Já existe uma categoria cadastrada com esta descrição.");
+        }
+        if (!categoria.gravar(conexao)) {
+            throw new IllegalStateException("Erro ao cadastrar categoria de mensalidade.");
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(categoria);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Object> alterar(@PathVariable int id, @RequestBody CategoriaMensalidade categoria) {
-        if (categoria.getDescricao() == null || categoria.getDescricao().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "A descrição não pode ficar vazia."));
-        }
-        if (categoria.getDescricao().trim().length() > 100) { // cat_mens_desc é VARCHAR(100)
-            return ResponseEntity.badRequest().body(Map.of("erro", "A descrição deve ter até 100 caracteres."));
-        }
-        if (categoria.getValor() == null || categoria.getValor().doubleValue() < 0) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "O valor informado é inválido."));
-        }
-        if (categoria.getQtd_irmao() < 0) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "A quantidade de irmãos não pode ser negativa."));
-        }
-        if (CategoriaMensalidade.descricaoJaExiste(conexao, categoria.getDescricao(), id)) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "Já existe outra categoria de mensalidade com essa descrição."));
+    public ResponseEntity<Object> atualizar(@PathVariable int id, @RequestBody Map<String, Object> corpo) {
+        autorizacao.exigirPerfil(conexao, List.of(UsuarioLogado.ADMIN, UsuarioLogado.FINANCEIRO));
+        CategoriaMensalidade existente = new CategoriaMensalidade().buscar(conexao, id);
+        if (existente == null) {
+            throw new NaoEncontradoException("Categoria de mensalidade não encontrada.");
         }
 
-        categoria.setCat_mens_cod(id);
-        boolean sucesso = categoria.alterar(conexao);
-        if (sucesso) {
-            return ResponseEntity.ok(Map.of("mensagem", "Categoria alterada com sucesso!"));
+        CategoriaMensalidade categoria = montarCategoria(id, corpo);
+        String problema = categoria.validar();
+        if (problema != null) {
+            throw new RegraNegocioException(problema);
         }
-        return ResponseEntity.badRequest().body(Map.of("erro", "Não foi possível alterar a categoria."));
+        if (categoria.existeDescricao(conexao, categoria.getDescricao(), id)) {
+            throw new RegraNegocioException("Já existe outra categoria cadastrada com esta descrição.");
+        }
+        if (!categoria.alterar(conexao)) {
+            throw new IllegalStateException("Erro ao atualizar categoria de mensalidade.");
+        }
+        return ResponseEntity.ok(categoria);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Object> apagar(@PathVariable int id) {
-        CategoriaMensalidade cat = CategoriaMensalidade.buscarPorId(conexao, id);
-        if (cat == null) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "Categoria não encontrada."));
+    public ResponseEntity<Object> excluir(@PathVariable int id) {
+        autorizacao.exigirPerfil(conexao, List.of(UsuarioLogado.ADMIN, UsuarioLogado.FINANCEIRO));
+        CategoriaMensalidade model = new CategoriaMensalidade();
+        CategoriaMensalidade existente = model.buscar(conexao, id);
+        if (existente == null) {
+            throw new NaoEncontradoException("Categoria de mensalidade não encontrada.");
+        }
+        if (model.possuiVinculos(conexao, id)) {
+            throw new RegraNegocioException("Não é possível excluir esta categoria pois há escoteiros ou mensalidades vinculados a ela.");
+        }
+        if (!existente.apagar(conexao)) {
+            throw new IllegalStateException("Erro ao excluir categoria de mensalidade.");
+        }
+        return ResponseEntity.ok(Map.of("mensagem", "Categoria excluída com sucesso."));
+    }
+
+    private CategoriaMensalidade montarCategoria(int id, Map<String, Object> corpo) {
+        CategoriaMensalidade cat = new CategoriaMensalidade();
+        cat.setId(id);
+
+        Object descObj = corpo.get("descricao");
+        if (descObj == null) descObj = corpo.get("cat_mens_desc");
+        if (descObj == null) descObj = corpo.get("cat_desc");
+        cat.setDescricao(descObj != null ? descObj.toString() : "");
+
+        Object valorObj = corpo.get("valor");
+        if (valorObj == null) valorObj = corpo.get("cat_mens_valor");
+        if (valorObj == null) valorObj = corpo.get("cat_valor");
+        if (valorObj != null && !valorObj.toString().isBlank()) {
+            try {
+                cat.setValor(new BigDecimal(valorObj.toString()));
+            } catch (NumberFormatException e) {
+                cat.setValor(BigDecimal.valueOf(-1));
+            }
+        } else {
+            cat.setValor(null);
         }
 
-        boolean sucesso = cat.apagar(conexao);
-        if (sucesso) {
-            return ResponseEntity.ok(Map.of("mensagem", "Categoria excluída com sucesso!"));
+        Object qtdObj = corpo.get("qtd_irmao");
+        if (qtdObj == null) qtdObj = corpo.get("qtdIrmao");
+        if (qtdObj == null) qtdObj = corpo.get("cat_mens_qtd_irmao");
+        if (qtdObj != null && !qtdObj.toString().isBlank()) {
+            try {
+                cat.setQtdIrmao(Integer.parseInt(qtdObj.toString()));
+            } catch (NumberFormatException e) {
+                cat.setQtdIrmao(-1);
+            }
+        } else {
+            cat.setQtdIrmao(0);
         }
-        return ResponseEntity.badRequest().body(Map.of("erro", "Não é possível excluir esta categoria pois há escoteiros ou mensalidades vinculados a ela."));
+
+        return cat;
     }
 }

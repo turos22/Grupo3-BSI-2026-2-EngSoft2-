@@ -3,6 +3,7 @@ import type Escoteiro from '@/data/models/Escoteiro'
 import type { FormaPagamento } from '@/data/models/PagamentoMensalidade'
 import type {
     AtividadesFinanceiroEscoteiro,
+    LancamentoPagamentoAtividade,
     ReciboPagamentoAtividade,
 } from '@/data/models/PagamentoAtividade'
 
@@ -18,13 +19,17 @@ export function consultarAtividadesEscoteiro(escCod: number): Promise<Atividades
     return requisitar<AtividadesFinanceiroEscoteiro>(`/pagamentos-atividade/escoteiros/${escCod}`)
 }
 
+export function listarLancamentosAtividade(crCod: number): Promise<LancamentoPagamentoAtividade[]> {
+    return requisitar<LancamentoPagamentoAtividade[]>(`/pagamentos-atividade/${crCod}/lancamentos`)
+}
+
 export function registrarPagamentoAtividade(
     crCod: number,
     dados: {
         valorRecebido: number
         formaPagamentoCod: number
         dataPagamento: string
-        confirmarDuplicado?: boolean
+        creditoUtilizado?: number
     }
 ): Promise<{ mensagem: string; recibo: ReciboPagamentoAtividade }> {
     return requisitar(`/pagamentos-atividade/${crCod}/registrar`, {
@@ -33,8 +38,9 @@ export function registrarPagamentoAtividade(
     })
 }
 
-export function estornarPagamentoAtividade(crCod: number): Promise<{ mensagem: string }> {
-    return requisitar(`/pagamentos-atividade/${crCod}/estornar`, {
+export function estornarPagamentoAtividade(crCod: number, pgCod?: number): Promise<{ mensagem: string }> {
+    const sufixo = pgCod ? `?pgCod=${pgCod}` : ''
+    return requisitar(`/pagamentos-atividade/${crCod}/estornar${sufixo}`, {
         method: 'DELETE',
     })
 }
