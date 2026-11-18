@@ -1,20 +1,31 @@
 package com.example.sigg_backend.models;
 
-import java.math.BigDecimal;
-import java.util.List;
 import com.example.sigg_backend.db.dao.TipoAtividadeDAO;
 import com.example.sigg_backend.db.util.Conexao;
 
-// Tipo de atividade (tabela tipo_atividade: ta_cod, ta_desc). O valor cobrado fica em atividade_especial.
-public class TipoAtividade {
-    private int ta_cod;
-    private String ta_desc;
+import java.util.List;
 
-    // Só o construtor vazio + setters: assim o JSON do cliente pode omitir ta_cod (o DAO gera o código)
+@SuppressWarnings("unused")
+public class TipoAtividade {
+    private int id;
+    private String descricao;
+
     public TipoAtividade() {
     }
 
-    // Métodos de negócio / persistência (Model chama o DAO)
+    public TipoAtividade(Integer id, String descricao) {
+        this.id = id != null ? id : 0;
+        this.descricao = descricao;
+    }
+
+    public String validar() {
+        if (descricao == null || descricao.trim().isEmpty())
+            return "A descrição do tipo de atividade é obrigatória.";
+        if (descricao.trim().length() > 100)
+            return "A descrição do tipo de atividade deve ter no máximo 100 caracteres.";
+        return null;
+    }
+
     public boolean gravar(Conexao conexao) {
         return new TipoAtividadeDAO().gravar(conexao, this);
     }
@@ -27,32 +38,47 @@ public class TipoAtividade {
         return new TipoAtividadeDAO().apagar(conexao, this);
     }
 
-    public static TipoAtividade buscarPorId(Conexao conexao, int id) {
-        return new TipoAtividadeDAO().get(conexao, id);
+    public List<TipoAtividade> listar(Conexao conexao) {
+        return new TipoAtividadeDAO().get(conexao);
     }
 
-    public static List<TipoAtividade> listar(Conexao conexao, String filtro) {
+    public List<TipoAtividade> pesquisar(Conexao conexao, String filtro) {
         return new TipoAtividadeDAO().get(conexao, filtro);
     }
 
-    public static boolean existeNome(Conexao conexao, String nome, int excetoCod) {
-        return new TipoAtividadeDAO().existeNome(conexao, nome, excetoCod);
+    public TipoAtividade buscarPorId(Conexao conexao, int id) {
+        return new TipoAtividadeDAO().get(conexao, id);
     }
 
-    // Getters e Setters
-    public int getTa_cod() {
-        return ta_cod;
+    public boolean possuiVinculos(Conexao conexao, int id) {
+        return new TipoAtividadeDAO().possuiVinculos(conexao, id);
     }
 
-    public void setTa_cod(int ta_cod) {
-        this.ta_cod = ta_cod;
+    public boolean existeDescricao(Conexao conexao, String descricao, int ignorarId) {
+        return new TipoAtividadeDAO().existeDescricao(conexao, descricao, ignorarId);
     }
 
-    public String getTa_desc() {
-        return ta_desc;
+    public int getId() { return id; }
+    public void setId(Integer id) { this.id = id != null ? id : 0; }
+
+    public int getTa_cod() { return id; }
+    public void setTa_cod(Integer ta_cod) {
+        if (ta_cod != null) {
+            this.id = ta_cod;
+        }
     }
 
+    public String getDescricao() { return descricao; }
+    public void setDescricao(String descricao) {
+        if (descricao != null) {
+            this.descricao = descricao;
+        }
+    }
+
+    public String getTa_desc() { return descricao; }
     public void setTa_desc(String ta_desc) {
-        this.ta_desc = ta_desc;
+        if (ta_desc != null) {
+            this.descricao = ta_desc;
+        }
     }
 }

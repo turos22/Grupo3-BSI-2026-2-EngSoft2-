@@ -1,4 +1,14 @@
-export type SituacaoPagamentoAtividade = 'ABERTA' | 'PARCIAL' | 'PAGA'
+export type SituacaoPagamentoAtividade = 'ABERTA' | 'PARCIAL' | 'PAGA' | 'ATRASADA'
+
+export interface LancamentoPagamentoAtividade {
+    pgCod: number
+    dataPagamento: string | null
+    valorPago: number
+    descricao: string | null
+    formaPagamentoCod: number
+    formaPagamentoDesc: string | null
+    podeEstornar: boolean
+}
 
 export interface PagamentoAtividade {
     id: number
@@ -7,12 +17,14 @@ export interface PagamentoAtividade {
     atividadeNome: string
     atividadeDesc: string | null
     atividadeData: string | null
+    dataAtividade?: string | null
     escCod: number
     escoteiroNome: string
     escoteiroCpf: string
     dataVencimento: string | null
     dataPagamento: string | null
     valorAtividade: number
+    valorDevido?: number
     valorPago: number
     saldo: number
     formaPagamentoCod: number
@@ -29,6 +41,7 @@ export interface AtividadesFinanceiroEscoteiro {
     cpf: string
     patrulha: string
     inadimplente: boolean
+    creditoDisponivel?: number
     atividades: PagamentoAtividade[]
 }
 
@@ -40,6 +53,7 @@ export interface ReciboPagamentoAtividade {
     atividade: string
     dataAtividade: string
     valorAtividade: number
+    creditoUtilizado?: number
     valorPago: number
     observacao: string
     dataPagamento: string

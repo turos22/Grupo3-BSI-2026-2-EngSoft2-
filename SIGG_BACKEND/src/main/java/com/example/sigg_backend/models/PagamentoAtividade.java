@@ -1,217 +1,199 @@
 package com.example.sigg_backend.models;
 
 import com.example.sigg_backend.db.dao.PagamentoAtividadeDAO;
+import com.example.sigg_backend.db.util.Conexao;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import com.example.sigg_backend.db.util.Conexao;
+import java.util.List;
 
 @SuppressWarnings("unused")
 public class PagamentoAtividade {
-    private int id;                     // pg_cod
-    private int crCod;                  // contas_receber.cr_cod
-    private int atvCod;                 // atividade_especial.atv_cod
-    private String atividadeNome;       // atividade_especial.atv_nome
-    private String atividadeDesc;       // atividade_especial.atv_desc
-    private LocalDate atividadeData;    // atividade_especial.atv_data
-    private int escCod;                 // escoteiro.esc_cod
+    private int id;
+    private int crCod;
+    private int atvCod;
+    private int escCod;
     private String escoteiroNome;
     private String escoteiroCpf;
+    private String atividadeNome;
+    private String atividadeDesc;
+    private LocalDate dataAtividade;
     private LocalDate dataVencimento;
     private LocalDate dataPagamento;
-    private BigDecimal valorAtividade = BigDecimal.ZERO;
+    private BigDecimal valorDevido = BigDecimal.ZERO;
     private BigDecimal valorPago = BigDecimal.ZERO;
     private BigDecimal valorRecebido = BigDecimal.ZERO;
+    private BigDecimal creditoUtilizado = BigDecimal.ZERO;
+    private BigDecimal valorEstornado = BigDecimal.ZERO;
     private int formaPagamentoCod;
     private String formaPagamentoDesc;
-    private String situacao;            // ABERTA, PARCIAL, PAGA
+    private String situacao;
     private boolean inadimplente;
+    private boolean podeEstornar;
     private String observacao;
 
     public PagamentoAtividade() {
     }
 
+    public String validar() {
+        if (crCod <= 0)
+            return "A conta a receber é obrigatória.";
+        if (formaPagamentoCod <= 0)
+            return "A forma de pagamento é obrigatória.";
+        if (dataPagamento != null && dataPagamento.isAfter(LocalDate.now()))
+            return "A data do pagamento não pode ser futura (superior à data atual).";
+        BigDecimal recebido = valorRecebido != null ? valorRecebido : BigDecimal.ZERO;
+        BigDecimal credito = creditoUtilizado != null ? creditoUtilizado : BigDecimal.ZERO;
+        if (recebido.compareTo(BigDecimal.ZERO) < 0)
+            return "O valor recebido não pode ser negativo.";
+        if (credito.compareTo(BigDecimal.ZERO) < 0)
+            return "O desconto de crédito não pode ser negativo.";
+        if (recebido.compareTo(BigDecimal.ZERO) == 0 && credito.compareTo(BigDecimal.ZERO) == 0)
+            return "O valor recebido deve ser maior que zero.";
+        return null;
+    }
+
     public BigDecimal saldoRestante() {
-        BigDecimal saldo = valorAtividade.subtract(valorPago).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal saldo = valorDevido.subtract(valorPago).setScale(2, RoundingMode.HALF_UP);
         return saldo.signum() < 0 ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : saldo;
+    }
+
+    public BigDecimal creditoGerado() {
+        BigDecimal exc = valorPago.subtract(valorDevido).setScale(2, RoundingMode.HALF_UP);
+        return exc.signum() > 0 ? exc : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     }
 
     public BigDecimal verificarDivergencia(BigDecimal valorInformado) {
         if (valorInformado == null) return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal base = saldoRestante().compareTo(BigDecimal.ZERO) > 0 ? saldoRestante() : valorAtividade;
-        return valorInformado.subtract(base).setScale(2, RoundingMode.HALF_UP);
+        return valorInformado.subtract(saldoRestante()).setScale(2, RoundingMode.HALF_UP);
     }
 
     public boolean registrar(Conexao conexao) {
-        return new PagamentoAtividadeDAO().registrar(conexao, this);
+        return new PagamentoAtividadeDAO().gravar(conexao, this);
     }
 
     public boolean estornar(Conexao conexao) {
-        return new PagamentoAtividadeDAO().estornar(conexao, this);
+        return new PagamentoAtividadeDAO().apagar(conexao, this);
     }
 
-    public static PagamentoAtividade buscarPorConta(Conexao conexao, int crCod) {
-        return new PagamentoAtividadeDAO().buscarPorConta(conexao, crCod);
+    public PagamentoAtividade buscarPorConta(Conexao conexao, int crCod) {
+        return new PagamentoAtividadeDAO().get(conexao, crCod);
     }
 
-    public static PagamentoAtividade[] listarPorEscoteiro(Conexao conexao, int escCod) {
+    public PagamentoAtividade[] listarPorEscoteiro(Conexao conexao, int escCod) {
         return new PagamentoAtividadeDAO().listarPorEscoteiro(conexao, escCod);
     }
 
-    public int getId() {
-        return id;
+    public List<PagamentoAtividade> listarTodos(Conexao conexao) {
+        return new PagamentoAtividadeDAO().get(conexao);
     }
 
-    public void setId(int id) {
-        this.id = id;
+    public FormaPagamento[] listarFormasPagamento(Conexao conexao) {
+        return new PagamentoAtividadeDAO().listarFormasPagamento(conexao);
     }
 
-    public int getCrCod() {
-        return crCod;
+    public Escoteiro[] listarEscoteirosComResumo(Conexao conexao) {
+        return new PagamentoAtividadeDAO().listarEscoteirosComResumo(conexao);
     }
 
-    public void setCrCod(int crCod) {
-        this.crCod = crCod;
+    public BigDecimal calcularCreditoDisponivel(Conexao conexao, int escCod) {
+        return new PagamentoAtividadeDAO().calcularCreditoDisponivel(conexao, escCod);
     }
 
-    public int getAtvCod() {
-        return atvCod;
+    public PagamentoAtividade[] listarLancamentos(Conexao conexao, int crCod) {
+        return new PagamentoAtividadeDAO().listarLancamentosPorConta(conexao, crCod);
     }
 
-    public void setAtvCod(int atvCod) {
-        this.atvCod = atvCod;
+    public int getId() { return id; }
+    public void setId(int id) { this.id = id; }
+
+    public int getPgCod() { return id; }
+    public void setPgCod(int pgCod) { this.id = pgCod; }
+
+    public int getCrCod() { return crCod; }
+    public void setCrCod(int crCod) { this.crCod = crCod; }
+
+    public int getAtvCod() { return atvCod; }
+    public void setAtvCod(int atvCod) { this.atvCod = atvCod; }
+
+    public int getEscCod() { return escCod; }
+    public void setEscCod(int escCod) { this.escCod = escCod; }
+
+    public String getEscoteiroNome() { return escoteiroNome; }
+    public void setEscoteiroNome(String escoteiroNome) { this.escoteiroNome = escoteiroNome; }
+
+    public String getEscoteiroCpf() { return escoteiroCpf; }
+    public void setEscoteiroCpf(String escoteiroCpf) { this.escoteiroCpf = escoteiroCpf; }
+
+    public String getAtividadeNome() { return atividadeNome; }
+    public void setAtividadeNome(String atividadeNome) { this.atividadeNome = atividadeNome; }
+
+    public String getAtividadeDesc() { return atividadeDesc; }
+    public void setAtividadeDesc(String atividadeDesc) { this.atividadeDesc = atividadeDesc; }
+
+    public LocalDate getDataAtividade() { return dataAtividade; }
+    public void setDataAtividade(LocalDate dataAtividade) { this.dataAtividade = dataAtividade; }
+
+    public LocalDate getAtividadeData() { return dataAtividade; }
+    public void setAtividadeData(LocalDate atividadeData) { this.dataAtividade = atividadeData; }
+
+    public LocalDate getDataVencimento() { return dataVencimento; }
+    public void setDataVencimento(LocalDate dataVencimento) { this.dataVencimento = dataVencimento; }
+
+    public LocalDate getDataPagamento() { return dataPagamento; }
+    public void setDataPagamento(LocalDate dataPagamento) { this.dataPagamento = dataPagamento; }
+
+    public BigDecimal getValorDevido() { return valorDevido; }
+    public void setValorDevido(BigDecimal valorDevido) {
+        this.valorDevido = valorDevido != null ? valorDevido : BigDecimal.ZERO;
     }
 
-    public String getAtividadeNome() {
-        return atividadeNome;
-    }
-
-    public void setAtividadeNome(String atividadeNome) {
-        this.atividadeNome = atividadeNome;
-    }
-
-    public String getAtividadeDesc() {
-        return atividadeDesc;
-    }
-
-    public void setAtividadeDesc(String atividadeDesc) {
-        this.atividadeDesc = atividadeDesc;
-    }
-
-    public LocalDate getAtividadeData() {
-        return atividadeData;
-    }
-
-    public void setAtividadeData(LocalDate atividadeData) {
-        this.atividadeData = atividadeData;
-    }
-
-    public int getEscCod() {
-        return escCod;
-    }
-
-    public void setEscCod(int escCod) {
-        this.escCod = escCod;
-    }
-
-    public String getEscoteiroNome() {
-        return escoteiroNome;
-    }
-
-    public void setEscoteiroNome(String escoteiroNome) {
-        this.escoteiroNome = escoteiroNome;
-    }
-
-    public String getEscoteiroCpf() {
-        return escoteiroCpf;
-    }
-
-    public void setEscoteiroCpf(String escoteiroCpf) {
-        this.escoteiroCpf = escoteiroCpf;
-    }
-
-    public LocalDate getDataVencimento() {
-        return dataVencimento;
-    }
-
-    public void setDataVencimento(LocalDate dataVencimento) {
-        this.dataVencimento = dataVencimento;
-    }
-
-    public LocalDate getDataPagamento() {
-        return dataPagamento;
-    }
-
-    public void setDataPagamento(LocalDate dataPagamento) {
-        this.dataPagamento = dataPagamento;
-    }
-
-    public BigDecimal getValorAtividade() {
-        return valorAtividade;
-    }
-
+    public BigDecimal getValorAtividade() { return valorDevido; }
     public void setValorAtividade(BigDecimal valorAtividade) {
-        this.valorAtividade = valorAtividade;
+        this.valorDevido = valorAtividade != null ? valorAtividade : BigDecimal.ZERO;
     }
 
-    public BigDecimal getValorPago() {
-        return valorPago;
-    }
-
+    public BigDecimal getValorPago() { return valorPago; }
     public void setValorPago(BigDecimal valorPago) {
-        this.valorPago = valorPago;
+        this.valorPago = valorPago != null ? valorPago : BigDecimal.ZERO;
     }
 
-    public BigDecimal getValorRecebido() {
-        return valorRecebido;
-    }
-
+    public BigDecimal getValorRecebido() { return valorRecebido; }
     public void setValorRecebido(BigDecimal valorRecebido) {
-        this.valorRecebido = valorRecebido;
+        this.valorRecebido = valorRecebido != null ? valorRecebido : BigDecimal.ZERO;
     }
 
-    public int getFormaPagamentoCod() {
-        return formaPagamentoCod;
+    public BigDecimal getCreditoUtilizado() { return creditoUtilizado; }
+    public void setCreditoUtilizado(BigDecimal creditoUtilizado) {
+        this.creditoUtilizado = creditoUtilizado != null ? creditoUtilizado : BigDecimal.ZERO;
     }
 
-    public void setFormaPagamentoCod(int formaPagamentoCod) {
-        this.formaPagamentoCod = formaPagamentoCod;
+    public BigDecimal getValorEstornado() { return valorEstornado; }
+    public void setValorEstornado(BigDecimal valorEstornado) {
+        this.valorEstornado = valorEstornado != null ? valorEstornado : BigDecimal.ZERO;
     }
 
-    public String getFormaPagamentoDesc() {
-        return formaPagamentoDesc;
-    }
+    public int getFormaPagamentoCod() { return formaPagamentoCod; }
+    public void setFormaPagamentoCod(int formaPagamentoCod) { this.formaPagamentoCod = formaPagamentoCod; }
 
-    public void setFormaPagamentoDesc(String formaPagamentoDesc) {
-        this.formaPagamentoDesc = formaPagamentoDesc;
-    }
+    public String getFormaPagamentoDesc() { return formaPagamentoDesc; }
+    public void setFormaPagamentoDesc(String formaPagamentoDesc) { this.formaPagamentoDesc = formaPagamentoDesc; }
 
-    public String getSituacao() {
-        return situacao;
-    }
+    public String getSituacao() { return situacao; }
+    public void setSituacao(String situacao) { this.situacao = situacao; }
 
-    public void setSituacao(String situacao) {
-        this.situacao = situacao;
-    }
+    public boolean isInadimplente() { return inadimplente; }
+    public void setInadimplente(boolean inadimplente) { this.inadimplente = inadimplente; }
 
-    public boolean isInadimplente() {
-        return inadimplente;
-    }
+    public boolean isPodeEstornar() { return podeEstornar; }
+    public void setPodeEstornar(boolean podeEstornar) { this.podeEstornar = podeEstornar; }
 
-    public void setInadimplente(boolean inadimplente) {
-        this.inadimplente = inadimplente;
-    }
+    public String getObservacao() { return observacao; }
+    public void setObservacao(String observacao) { this.observacao = observacao; }
 
-    public String getObservacao() {
-        return observacao;
-    }
+    public String getDescricao() { return observacao; }
+    public void setDescricao(String descricao) { this.observacao = descricao; }
 
-    public void setObservacao(String observacao) {
-        this.observacao = observacao;
-    }
-
-    public BigDecimal getSaldo() {
-        return saldoRestante();
-    }
+    public BigDecimal getSaldo() { return saldoRestante(); }
 }

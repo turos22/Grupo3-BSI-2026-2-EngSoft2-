@@ -18,17 +18,19 @@ import {
     alterarCategoriaMensalidade,
     apagarCategoriaMensalidade,
 } from '@/data/services/categoriasMensalidade'
+import { formatarMoeda } from '@/data/utils/formatadores'
 
 const colunas: ColunaGrade<CategoriaMensalidade>[] = [
-    { id: 'codigo', titulo: 'Código', valor: (c) => c.cat_mens_cod },
+    { id: 'codigo', titulo: 'Código', valor: (c) => c.cat_mens_cod, largura: 110 },
     { id: 'descricao', titulo: 'Descrição', valor: (c) => c.descricao },
     {
         id: 'valor',
         titulo: 'Valor',
-        valor: (c) => c.valor,
-        renderizar: (c) => `R$ ${Number(c.valor).toFixed(2)}`,
+        valor: (c) => Number(c.valor ?? 0),
+        renderizar: (c) => formatarMoeda(Number(c.valor ?? 0)),
+        alinhamento: 'right',
     },
-    { id: 'qtd_irmao', titulo: 'Qtd. Irmãos', valor: (c) => c.qtd_irmao },
+    { id: 'qtd_irmao', titulo: 'Qtd. Irmãos', valor: (c) => Number(c.qtd_irmao ?? 0), largura: 140 },
 ]
 
 function extrairMensagemErro(err: unknown, padrao: string): string {
@@ -46,7 +48,9 @@ function extrairMensagemErro(err: unknown, padrao: string): string {
 export default function PaginaCategoriasMensalidade() {
     const [categorias, setCategorias] = useState<CategoriaMensalidade[]>([])
     const [carregando, setCarregando] = useState(true)
+    const [salvando, setSalvando] = useState(false)
     const [erro, setErro] = useState('')
+    const [erroModal, setErroModal] = useState('')
     const [sucesso, setSucesso] = useState('')
 
     const [selecionada, setSelecionada] = useState<CategoriaMensalidade | null>(null)
@@ -71,10 +75,8 @@ export default function PaginaCategoriasMensalidade() {
         }
     }
 
-    // Carga inicial. Não chama carregar() aqui: ele faz setCarregando(true) de forma síncrona dentro do efeito
-    // (o estado já nasce true). O estado só é atualizado quando a resposta chega.
     useEffect(() => {
-        let ativo = true // evita atualizar o estado depois que a página foi fechada
+        let ativo = true
         buscarCategoriasMensalidade('')
             .then((lista) => {
                 if (ativo) {
@@ -99,16 +101,18 @@ export default function PaginaCategoriasMensalidade() {
         setValor('')
         setQtdIrmao('0')
         setErro('')
+        setErroModal('')
         setSucesso('')
         setModalAberto(true)
     }
 
     const abrirEdicao = (item: CategoriaMensalidade) => {
         setSelecionada(item)
-        setDescricao(item.descricao)
-        setValor(item.valor.toString())
-        setQtdIrmao(item.qtd_irmao.toString())
+        setDescricao(item.descricao ?? '')
+        setValor(Number(item.valor ?? 0).toFixed(2))
+        setQtdIrmao(String(item.qtd_irmao ?? 0))
         setErro('')
+        setErroModal('')
         setSucesso('')
         setModalAberto(true)
     }
@@ -116,22 +120,42 @@ export default function PaginaCategoriasMensalidade() {
     const handleSalvar = async (e: React.FormEvent) => {
         e.preventDefault()
         setErro('')
+        setErroModal('')
         setSucesso('')
 
+        const descLimpa = descricao.trim()
+        if (!descLimpa) {
+            setErroModal('A descrição da categoria de mensalidade é obrigatória.')
+            return
+        }
+
+        const valorNum = parseFloat(valor)
+        if (Number.isNaN(valorNum) || valorNum < 0) {
+            setErroModal('Informe um valor válido (maior ou igual a zero).')
+            return
+        }
+
+        const qtdNum = parseInt(qtdIrmao, 10)
+        if (Number.isNaN(qtdNum) || qtdNum < 0) {
+            setErroModal('A quantidade de irmãos não pode ser negativa.')
+            return
+        }
+
+        setSalvando(true)
         try {
             if (selecionada) {
                 await alterarCategoriaMensalidade(selecionada.cat_mens_cod, {
                     cat_mens_cod: selecionada.cat_mens_cod,
-                    descricao,
-                    valor: parseFloat(valor),
-                    qtd_irmao: parseInt(qtdIrmao, 10) || 0,
+                    descricao: descLimpa,
+                    valor: valorNum,
+                    qtd_irmao: qtdNum,
                 })
                 setSucesso('Categoria atualizada com sucesso!')
             } else {
                 await cadastrarCategoriaMensalidade({
-                    descricao,
-                    valor: parseFloat(valor),
-                    qtd_irmao: parseInt(qtdIrmao, 10) || 0,
+                    descricao: descLimpa,
+                    valor: valorNum,
+                    qtd_irmao: qtdNum,
                 })
                 setSucesso('Categoria cadastrada com sucesso!')
             }
@@ -139,13 +163,15 @@ export default function PaginaCategoriasMensalidade() {
             setSelecionada(null)
             await carregar()
         } catch (err) {
-            setErro(extrairMensagemErro(err, 'Erro inesperado ao salvar categoria.'))
+            setErroModal(extrairMensagemErro(err, 'Erro inesperado ao salvar categoria.'))
+        } finally {
+            setSalvando(false)
         }
     }
 
     const handleExcluir = async () => {
-        if (!selecionadoValido()) return
-        const alvo = selecionada!
+        if (!selecionada) return
+        const alvo = selecionada
         setConfirmandoExclusao(false)
         setErro('')
         setSucesso('')
@@ -160,8 +186,6 @@ export default function PaginaCategoriasMensalidade() {
         }
     }
 
-    const selecionadoValido = () => selecionada !== null
-
     return (
         <main className="pagina">
             <header>
@@ -169,8 +193,16 @@ export default function PaginaCategoriasMensalidade() {
                 <p className="subtitulo">Configuração de faixas de mensalidade e descontos por irmãos</p>
             </header>
 
-            {erro && <Alert severity="error" sx={{ mb: 2 }}>{erro}</Alert>}
-            {sucesso && <Alert severity="success" sx={{ mb: 2 }}>{sucesso}</Alert>}
+            {erro && (
+                <Alert severity="error" onClose={() => setErro('')} sx={{ mb: 2 }}>
+                    {erro}
+                </Alert>
+            )}
+            {sucesso && (
+                <Alert severity="success" onClose={() => setSucesso('')} sx={{ mb: 2 }}>
+                    {sucesso}
+                </Alert>
+            )}
 
             <Box
                 component="form"
@@ -203,10 +235,19 @@ export default function PaginaCategoriasMensalidade() {
                     <DialogTitle>{selecionada ? 'Editar Categoria de Mensalidade' : 'Nova Categoria de Mensalidade'}</DialogTitle>
                     <DialogContent>
                         <Stack spacing={2} sx={{ mt: 1 }}>
+                            {erroModal && (
+                                <Alert severity="error" onClose={() => setErroModal('')}>
+                                    {erroModal}
+                                </Alert>
+                            )}
                             <TextField
                                 label="Descrição"
                                 value={descricao}
-                                onChange={(e) => setDescricao(e.target.value)}
+                                onChange={(e) => {
+                                    setDescricao(e.target.value)
+                                    setErroModal('')
+                                }}
+                                slotProps={{ htmlInput: { maxLength: 100 } }}
                                 required
                                 fullWidth
                             />
@@ -215,7 +256,10 @@ export default function PaginaCategoriasMensalidade() {
                                 type="number"
                                 slotProps={{ htmlInput: { step: '0.01', min: '0' } }}
                                 value={valor}
-                                onChange={(e) => setValor(e.target.value)}
+                                onChange={(e) => {
+                                    setValor(e.target.value)
+                                    setErroModal('')
+                                }}
                                 required
                                 fullWidth
                             />
@@ -224,7 +268,10 @@ export default function PaginaCategoriasMensalidade() {
                                 type="number"
                                 slotProps={{ htmlInput: { step: '1', min: '0' } }}
                                 value={qtdIrmao}
-                                onChange={(e) => setQtdIrmao(e.target.value)}
+                                onChange={(e) => {
+                                    setQtdIrmao(e.target.value)
+                                    setErroModal('')
+                                }}
                                 required
                                 fullWidth
                             />
@@ -232,7 +279,11 @@ export default function PaginaCategoriasMensalidade() {
                     </DialogContent>
                     <DialogActions sx={{ px: 3, pb: 2 }}>
                         <BotaoCancelar rotulo="Cancelar" aoClicar={() => setModalAberto(false)} />
-                        <BotaoOk rotulo={selecionada ? 'Atualizar' : 'Cadastrar'} tipo="submit" />
+                        <BotaoOk
+                            rotulo={selecionada ? 'Atualizar' : 'Cadastrar'}
+                            tipo="submit"
+                            carregando={salvando}
+                        />
                     </DialogActions>
                 </form>
             </Dialog>

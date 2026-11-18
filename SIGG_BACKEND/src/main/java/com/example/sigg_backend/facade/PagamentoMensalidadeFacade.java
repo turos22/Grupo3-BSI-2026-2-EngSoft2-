@@ -1,5 +1,6 @@
 package com.example.sigg_backend.facade;
 
+import com.example.sigg_backend.db.util.Conexao;
 import com.example.sigg_backend.models.CategoriaMensalidade;
 import com.example.sigg_backend.models.Escoteiro;
 import com.example.sigg_backend.models.FormaPagamento;
@@ -15,7 +16,6 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import com.example.sigg_backend.db.util.Conexao;
 
 @Service
 public class PagamentoMensalidadeFacade {
@@ -28,13 +28,13 @@ public class PagamentoMensalidadeFacade {
 
     public FormaPagamento[] listarFormasPagamento(Conexao conexao) {
         autorizacao.exigirDiretoria(conexao);
-        return PagamentoMensalidade.listarFormasPagamento(conexao);
+        return new PagamentoMensalidade().listarFormasPagamento(conexao);
     }
 
     public Escoteiro[] pesquisarEscoteiros(Conexao conexao, String busca) {
         autorizacao.exigirDiretoria(conexao);
         if (busca == null || busca.isBlank()) {
-            return PagamentoMensalidade.listarEscoteirosComResumo(conexao);
+            return new PagamentoMensalidade().listarEscoteirosComResumo(conexao);
         }
         String termo = busca.trim();
         if (termo.matches("[\\d.\\-]+")) {
@@ -47,13 +47,11 @@ public class PagamentoMensalidadeFacade {
         return lista.toArray(new Escoteiro[0]);
     }
 
-    // Grade de situação financeira: em dia, pendente (calculado) ou inadimplente (marcado pelo financeiro)
     public List<SituacaoEscoteiro> listarSituacoes(Conexao conexao, Integer troCod) {
         autorizacao.exigirDiretoria(conexao);
-        return PagamentoMensalidade.listarSituacoes(conexao, troCod);
+        return new PagamentoMensalidade().listarSituacoes(conexao, troCod);
     }
 
-    // Só o financeiro marca, e só quem está pendente: o sistema nunca marca inadimplência sozinho
     @Transactional
     public Map<String, String> marcarInadimplente(Conexao conexao, int escCod) {
         autorizacao.exigirPerfil(conexao, List.of(UsuarioLogado.ADMIN, UsuarioLogado.FINANCEIRO));
@@ -64,10 +62,11 @@ public class PagamentoMensalidadeFacade {
         if (escoteiro.getEsc_sit_fin() == 1) {
             throw new RegraNegocioException("Este escoteiro já está inadimplente");
         }
-        if (!PagamentoMensalidade.possuiMensalidadeVencidaEmAberto(conexao, escCod)) {
+        PagamentoMensalidade model = new PagamentoMensalidade();
+        if (!model.possuiMensalidadeVencidaEmAberto(conexao, escCod)) {
             throw new RegraNegocioException("Este escoteiro não possui mensalidades em atraso e não pode ser marcado como Inadimplente");
         }
-        if (!PagamentoMensalidade.atualizarSituacaoFinanceiraEscoteiro(conexao, escCod, 1)) {
+        if (!model.atualizarSituacaoFinanceiraEscoteiro(conexao, escCod, 1)) {
             throw new IllegalStateException("Não foi possível marcar o escoteiro como inadimplente.");
         }
         return Map.of("mensagem", escoteiro.getMembro().getNome() + " foi marcado(a) como inadimplente.");
@@ -80,8 +79,10 @@ public class PagamentoMensalidadeFacade {
             throw new NaoEncontradoException("Escoteiro não encontrado.");
         }
 
-        CategoriaMensalidade categoria = CategoriaMensalidade.buscarPorId(conexao, escoteiro.getCat_mensalidade());
-        PagamentoMensalidade[] mensalidades = PagamentoMensalidade.listarPorEscoteiro(conexao, escCod);
+        PagamentoMensalidade model = new PagamentoMensalidade();
+        CategoriaMensalidade categoria = new CategoriaMensalidade().buscar(conexao, escoteiro.getCat_mensalidade());
+        PagamentoMensalidade[] mensalidades = model.listarPorEscoteiro(conexao, escCod);
+        BigDecimal creditoDisponivel = model.calcularCreditoDisponivel(conexao, escCod);
 
         Map<String, Object> resumo = new LinkedHashMap<>();
         resumo.put("esc_cod", escoteiro.getEsc_cod());
@@ -92,19 +93,45 @@ public class PagamentoMensalidadeFacade {
         resumo.put("categoria", categoria != null ? categoria.getDescricao() : "Categoria " + escoteiro.getCat_mensalidade());
         resumo.put("valorCategoria", categoria != null ? categoria.getValor() : BigDecimal.ZERO);
         resumo.put("inadimplente", escoteiro.getEsc_sit_fin() == 1);
+        resumo.put("creditoDisponivel", creditoDisponivel);
         resumo.put("mensalidades", mensalidades);
         return resumo;
     }
 
+    public PagamentoMensalidade[] listarPagamentosDaMensalidade(Conexao conexao, int crCod) {
+        autorizacao.exigirDiretoria(conexao);
+        PagamentoMensalidade model = new PagamentoMensalidade();
+        PagamentoMensalidade pag = model.buscarPorConta(conexao, crCod);
+        if (pag == null) {
+            throw new NaoEncontradoException("Mensalidade não encontrada.");
+        }
+        return model.listarLancamentos(conexao, crCod);
+    }
+
     @Transactional
-    public Map<String, Object> registrarPagamento(Conexao conexao, int crCod, BigDecimal valorRecebido, int formaPagamentoCod, LocalDate dataPagamento) {
+    public Map<String, Object> registrarPagamento(
+            Conexao conexao,
+            int crCod,
+            BigDecimal valorRecebido,
+            int formaPagamentoCod,
+            LocalDate dataPagamento
+    ) {
+        return registrarPagamento(conexao, crCod, valorRecebido, formaPagamentoCod, dataPagamento, BigDecimal.ZERO);
+    }
+
+    @Transactional
+    public Map<String, Object> registrarPagamento(
+            Conexao conexao,
+            int crCod,
+            BigDecimal valorRecebido,
+            int formaPagamentoCod,
+            LocalDate dataPagamento,
+            BigDecimal creditoUtilizado
+    ) {
         autorizacao.exigirPerfil(conexao, List.of(UsuarioLogado.ADMIN, UsuarioLogado.FINANCEIRO));
 
-        if (valorRecebido == null || valorRecebido.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RegraNegocioException("O valor recebido deve ser maior que zero.");
-        }
-
-        PagamentoMensalidade pag = PagamentoMensalidade.buscarPorConta(conexao, crCod);
+        PagamentoMensalidade model = new PagamentoMensalidade();
+        PagamentoMensalidade pag = model.buscarPorConta(conexao, crCod);
         if (pag == null) {
             throw new NaoEncontradoException("Mensalidade não encontrada.");
         }
@@ -114,20 +141,54 @@ public class PagamentoMensalidadeFacade {
             throw new RegraNegocioException("Esta mensalidade já se encontra totalmente quitada.");
         }
 
-        BigDecimal valorFinal = valorRecebido.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal diferenca = pag.verificarDivergencia(valorFinal);
-        LocalDate dtPagto = dataPagamento != null ? dataPagamento : LocalDate.now();
+        String refAnteriorPendente = pag.buscarMensalidadeAnteriorEmAberto(conexao);
+        if (refAnteriorPendente != null) {
+            throw new RegraNegocioException(
+                    "Não é permitido pagar a mensalidade " + pag.getReferencia()
+                            + " enquanto houver pendências na mensalidade anterior (" + refAnteriorPendente + "). Quite a mais antiga primeiro."
+            );
+        }
 
+        BigDecimal creditoDisp = model.calcularCreditoDisponivel(conexao, pag.getEscCod());
+        BigDecimal creditoFinal = creditoUtilizado != null
+                ? creditoUtilizado.setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+
+        if (creditoFinal.compareTo(creditoDisp) > 0) {
+            throw new RegraNegocioException("Crédito informado (R$ " + creditoFinal + ") excede o saldo disponível (R$ " + creditoDisp + ").");
+        }
+        if (creditoFinal.compareTo(saldoDevido) > 0) {
+            creditoFinal = saldoDevido;
+        }
+
+        BigDecimal valorFinal = valorRecebido != null
+                ? valorRecebido.setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+
+        LocalDate dtPagto = dataPagamento != null ? dataPagamento : LocalDate.now();
         pag.setValorRecebido(valorFinal);
+        pag.setCreditoUtilizado(creditoFinal);
         pag.setFormaPagamentoCod(formaPagamentoCod);
         pag.setDataPagamento(dtPagto);
 
-        String obsDivergencia = "";
-        if (diferenca.compareTo(BigDecimal.ZERO) < 0) {
-            obsDivergencia = "Pagamento parcial. Diferença de R$ " + diferenca.abs() + " mantida em aberto.";
-        } else if (diferenca.compareTo(BigDecimal.ZERO) > 0) {
-            obsDivergencia = "Pagamento superior ao devido. Excedente de R$ " + diferenca + " registrado como crédito.";
+        String problema = pag.validar();
+        if (problema != null) {
+            throw new RegraNegocioException(problema);
         }
+
+        BigDecimal totalAplicado = valorFinal.add(creditoFinal).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal diferenca = pag.verificarDivergencia(totalAplicado);
+
+        StringBuilder obs = new StringBuilder();
+        if (creditoFinal.compareTo(BigDecimal.ZERO) > 0) {
+            obs.append("Desconto de R$ ").append(creditoFinal).append(" aplicado do saldo excedente. ");
+        }
+        if (diferenca.compareTo(BigDecimal.ZERO) < 0) {
+            obs.append("Pagamento parcial. Diferença de R$ ").append(diferenca.abs()).append(" mantida em aberto.");
+        } else if (diferenca.compareTo(BigDecimal.ZERO) > 0) {
+            obs.append("Pagamento superior ao devido. Excedente de R$ ").append(diferenca).append(" registrado como crédito.");
+        }
+        String obsDivergencia = obs.toString().trim();
         pag.setObservacao(obsDivergencia);
 
         if (!pag.registrar(conexao)) {
@@ -135,8 +196,8 @@ public class PagamentoMensalidadeFacade {
         }
 
         boolean regularizado = false;
-        if (pag.isInadimplente() && !PagamentoMensalidade.possuiMensalidadeVencidaEmAberto(conexao, pag.getEscCod())) {
-            PagamentoMensalidade.atualizarSituacaoFinanceiraEscoteiro(conexao, pag.getEscCod(), 0);
+        if (pag.isInadimplente() && !model.possuiMensalidadeVencidaEmAberto(conexao, pag.getEscCod())) {
+            model.atualizarSituacaoFinanceiraEscoteiro(conexao, pag.getEscCod(), 0);
             regularizado = true;
         }
 
@@ -147,6 +208,7 @@ public class PagamentoMensalidadeFacade {
         recibo.put("matricula", pag.getEscCod());
         recibo.put("referencia", pag.getReferencia());
         recibo.put("valorDevido", saldoDevido);
+        recibo.put("creditoUtilizado", creditoFinal);
         recibo.put("valorPago", valorFinal);
         recibo.put("diferenca", diferenca);
         recibo.put("observacao", obsDivergencia);
@@ -163,9 +225,15 @@ public class PagamentoMensalidadeFacade {
 
     @Transactional
     public Map<String, Object> estornarPagamento(Conexao conexao, int crCod) {
+        return estornarPagamento(conexao, crCod, 0);
+    }
+
+    @Transactional
+    public Map<String, Object> estornarPagamento(Conexao conexao, int crCod, int pgCod) {
         autorizacao.exigirPerfil(conexao, List.of(UsuarioLogado.ADMIN, UsuarioLogado.FINANCEIRO));
 
-        PagamentoMensalidade pag = PagamentoMensalidade.buscarPorConta(conexao, crCod);
+        PagamentoMensalidade model = new PagamentoMensalidade();
+        PagamentoMensalidade pag = model.buscarPorConta(conexao, crCod);
         if (pag == null) {
             throw new NaoEncontradoException("Mensalidade não encontrada.");
         }
@@ -173,11 +241,31 @@ public class PagamentoMensalidadeFacade {
             throw new RegraNegocioException("Esta mensalidade não possui pagamento registrado para estorno.");
         }
 
-        if (!pag.estornar(conexao)) {
-            throw new IllegalStateException("Não foi possível estornar o pagamento.");
+        String refPosteriorPaga = pag.buscarMensalidadePosteriorComPagamento(conexao);
+        if (refPosteriorPaga != null) {
+            throw new RegraNegocioException(
+                    "Não é permitido estornar a mensalidade " + pag.getReferencia()
+                            + " pois existe pagamento registrado em competência posterior (" + refPosteriorPaga + "). Estorne a mais recente primeiro."
+            );
         }
 
-        // O estorno só reabre a mensalidade: quem passa a dever aparece como pendente, e só o financeiro marca inadimplente
-        return Map.of("mensagem", "Estorno concluído! A mensalidade " + pag.getReferencia() + " foi reaberta.");
+        if (pgCod > 0) {
+            pag.setId(pgCod);
+        }
+
+        if (!pag.estornar(conexao)) {
+            throw new RegraNegocioException(
+                    "O estorno deve respeitar a ordem do último pagamento realizado até o inicial."
+            );
+        }
+
+        PagamentoMensalidade atualizado = model.buscarPorConta(conexao, crCod);
+        BigDecimal pagoRestante = atualizado != null ? atualizado.getValorPago() : BigDecimal.ZERO;
+
+        String msg = pagoRestante.compareTo(BigDecimal.ZERO) > 0
+                ? "Lançamento de R$ " + pag.getValorEstornado() + " estornado! A mensalidade " + pag.getReferencia() + " permanece com R$ " + pagoRestante + " pagos."
+                : "Estorno concluído (R$ " + pag.getValorEstornado() + ")! A mensalidade " + pag.getReferencia() + " voltou para em aberto.";
+
+        return Map.of("mensagem", msg);
     }
 }
