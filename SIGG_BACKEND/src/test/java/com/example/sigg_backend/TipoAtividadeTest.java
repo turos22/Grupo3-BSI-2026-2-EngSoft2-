@@ -57,13 +57,13 @@ class TipoAtividadeTest {
     }
 
     @Test
-    void buscarPorCodigoDevolveOTipoEInexistenteDevolve400() throws Exception {
+    void buscarPorCodigoDevolveOTipoEInexistenteDevolve404() throws Exception {
         mvc.perform(get("/tipos-atividade/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ta_cod").value(1))
                 .andExpect(jsonPath("$.ta_desc").value("Acampamento"));
         mvc.perform(get("/tipos-atividade/999"))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.erro").isNotEmpty());
     }
 
@@ -72,8 +72,9 @@ class TipoAtividadeTest {
         int proximo = jdbc.queryForObject("SELECT max(ta_cod) FROM tipo_atividade", Integer.class) + 1;
 
         enviar(post("/tipos-atividade"), "{\"ta_desc\":\"Oficina de Nós\"}")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensagem").isNotEmpty());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.ta_cod").value(proximo))
+                .andExpect(jsonPath("$.ta_desc").value("Oficina de Nós"));
 
         assertEquals(1, contar("SELECT count(*) FROM tipo_atividade WHERE ta_cod = ? AND ta_desc = 'Oficina de Nós'", proximo));
     }
@@ -128,8 +129,8 @@ class TipoAtividadeTest {
     }
 
     @Test
-    void apagarTipoInexistenteDevolve400() throws Exception {
+    void apagarTipoInexistenteDevolve404() throws Exception {
         mvc.perform(delete("/tipos-atividade/999"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound());
     }
 }
