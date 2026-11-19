@@ -1,3 +1,4 @@
+import type CandidatosContribuicao from '@/data/models/CandidatosContribuicao'
 import type Contribuicao from '@/data/models/Contribuicao'
 import type RegistroContribuicao from '@/data/models/RegistroContribuicao'
 import type VerificacaoContribuicao from '@/data/models/VerificacaoContribuicao'
@@ -5,6 +6,10 @@ import { requisitar } from '@/data/services/api'
 
 export function buscarContribuicoes(): Promise<Contribuicao[]> {
   return requisitar<Contribuicao[]>('/contribuicoes')
+}
+
+export function buscarCandidatosContribuicao(): Promise<CandidatosContribuicao> {
+  return requisitar<CandidatosContribuicao>('/contribuicoes/candidatos')
 }
 
 export function verificarContribuicao(cpfAnjo: string, cpfAdotado: string): Promise<VerificacaoContribuicao> {

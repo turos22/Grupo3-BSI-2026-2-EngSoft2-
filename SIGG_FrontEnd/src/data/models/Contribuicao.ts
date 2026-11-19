@@ -6,4 +6,6 @@ export default interface Contribuicao {
   adotado: number
   nome_anjo: string
   nome_adotado: string
+  cpf_anjo: string
+  cpf_adotado: string
 }
