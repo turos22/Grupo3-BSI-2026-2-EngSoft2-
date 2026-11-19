@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.sigg_backend.models.CandidatosContribuicao;
 import com.example.sigg_backend.models.Contribuicao;
 import com.example.sigg_backend.models.Escoteiro;
 import com.example.sigg_backend.models.RegistroContribuicao;
@@ -39,6 +40,24 @@ public class ContribuicaoFacade {
         if (anjo == null)
             throw new NaoEncontradoException("Escoteiro " + memCod + " não encontrado");
         return new Contribuicao().doAnjo(conexao, anjo.getEsc_cod());
+    }
+
+    public CandidatosContribuicao candidatos(Conexao conexao) {
+        autorizacao.exigirDiretoria(conexao);
+        List<Escoteiro> todos = new Escoteiro().listar(conexao);
+        Set<Integer> anjosComAdotados = new HashSet<>();
+        for (Escoteiro escoteiro : todos)
+            if (escoteiro.ehAdotado())
+                anjosComAdotados.add(escoteiro.getAnjo());
+        CandidatosContribuicao candidatos = new CandidatosContribuicao();
+        for (Escoteiro escoteiro : todos) {
+            if (escoteiro.ehAdotado())
+                continue;
+            candidatos.getAnjos().add(escoteiro);
+            if (!anjosComAdotados.contains(escoteiro.getEsc_cod()))
+                candidatos.getAdotados().add(escoteiro);
+        }
+        return candidatos;
     }
 
     public Map<String, Escoteiro> verificar(Conexao conexao, String cpfAnjo, String cpfAdotado) {
