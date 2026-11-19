@@ -1,0 +1,9 @@
+.seletor-escoteiro {
+  display: grid;
+  gap: 12px;
+}
+
+.seletor-escoteiro-contagem {
+  margin: 0;
+  font-size: 12px;
+}
