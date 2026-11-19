@@ -68,12 +68,15 @@ public class ContribuicaoDAO implements IDAO<Contribuicao> {
         contribuicao.setAdotado(rs.getInt("adotado_esc_cod"));
         contribuicao.setNome_anjo(rs.getString("nome_anjo"));
         contribuicao.setNome_adotado(rs.getString("nome_adotado"));
+        contribuicao.setCpf_anjo(rs.getString("cpf_anjo"));
+        contribuicao.setCpf_adotado(rs.getString("cpf_adotado"));
         return contribuicao;
     }
 
     private List<Contribuicao> buscar(Conexao conexao, String condicao, Object... valores){
         ResultSet rs = conexao.consultar(
-                "SELECT c.*, ma.mem_nome AS nome_anjo, mo.mem_nome AS nome_adotado FROM contribuicao c"
+                "SELECT c.*, ma.mem_nome AS nome_anjo, mo.mem_nome AS nome_adotado,"
+                        + " ma.mem_cpf AS cpf_anjo, mo.mem_cpf AS cpf_adotado FROM contribuicao c"
                         + " JOIN escoteiro ea ON ea.esc_cod = c.anjo_esc_cod"
                         + " JOIN membro ma ON ma.mem_cod = ea.mem_cod"
                         + " JOIN escoteiro eo ON eo.esc_cod = c.adotado_esc_cod"
