@@ -14,6 +14,8 @@ public class Contribuicao {
     private int adotado;
     private String nome_anjo;
     private String nome_adotado;
+    private String cpf_anjo;
+    private String cpf_adotado;
 
     public Contribuicao() {
     }
@@ -84,6 +86,22 @@ public class Contribuicao {
 
     public void setNome_anjo(String nome_anjo) {
         this.nome_anjo = nome_anjo;
+    }
+
+    public String getCpf_anjo() {
+        return cpf_anjo;
+    }
+
+    public void setCpf_anjo(String cpf_anjo) {
+        this.cpf_anjo = cpf_anjo;
+    }
+
+    public String getCpf_adotado() {
+        return cpf_adotado;
+    }
+
+    public void setCpf_adotado(String cpf_adotado) {
+        this.cpf_adotado = cpf_adotado;
     }
 
     public String getNome_adotado() {
