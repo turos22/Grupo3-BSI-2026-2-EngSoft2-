@@ -44,7 +44,7 @@ public class ConfiguracaoSeguranca {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(PUBLICAS).permitAll()
                         .requestMatchers(HttpMethod.GET, "/parametrizacao").permitAll()
-                        .requestMatchers("/auth/**", "/mensalidades/**").authenticated()
+                        .requestMatchers("/auth/**", "/mensalidades/**", "/intencoes-participacao/**").authenticated()
                         .requestMatchers("/contas/**").hasRole("ADMIN")
                         .anyRequest().hasAnyRole("ADMIN", "PRESIDENTE", "CHEFE", "FINANCEIRO"))
                 .exceptionHandling(erro -> erro.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
