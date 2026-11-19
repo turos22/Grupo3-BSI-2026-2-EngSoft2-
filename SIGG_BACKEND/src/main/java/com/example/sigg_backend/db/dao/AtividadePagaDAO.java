@@ -32,6 +32,31 @@ public class AtividadePagaDAO {
                 atividade.getLocal(), atividade.getValor(), atividade.getVagas(), atividade.getPrazoInteresse());
     }
 
+    public boolean alterar(Conexao conexao, AtividadePaga atividade) {
+        return conexao.manipular(
+                "UPDATE atividade_especial SET atv_nome = ?, atv_desc = ?, atv_data = ?, atv_local = ?, atv_valor = ?,"
+                        + " atv_vagas = ?, atv_prazo_interesse = ? WHERE atv_cod = ? AND atv_valor IS NOT NULL",
+                atividade.getNome(), atividade.getDescricao(), atividade.getData(), atividade.getLocal(),
+                atividade.getValor(), atividade.getVagas(), atividade.getPrazoInteresse(), atividade.getCodigo());
+    }
+
+    public boolean apagar(Conexao conexao, int codigo) {
+        return conexao.manipular("DELETE FROM atividade_especial WHERE atv_cod = ? AND atv_valor IS NOT NULL", codigo);
+    }
+
+    // Inscrições/pagamentos (contas_receber) ou presenças (frequencia) ligados à atividade impedem a exclusão.
+    public boolean temVinculos(Conexao conexao, int codigo) {
+        ResultSet rs = conexao.consultar(
+                "SELECT 1 FROM contas_receber WHERE atividade_especial_atv_cod = ?"
+                        + " UNION ALL SELECT 1 FROM frequencia WHERE atividade_especial_atv_cod = ? LIMIT 1",
+                codigo, codigo);
+        try {
+            return rs == null || rs.next();
+        } catch (SQLException sqlex) {
+            return true;
+        }
+    }
+
     // somenteAbertas: prazo de manifestação ainda não venceu (as antigas, sem prazo, valem pela data da atividade).
     public List<AtividadePaga> listar(Conexao conexao, boolean somenteAbertas) {
         String sql = COLUNAS;
@@ -45,9 +70,11 @@ public class AtividadePagaDAO {
         return lista.isEmpty() ? null : lista.get(0);
     }
 
-    public boolean existeMesmoNomeEData(Conexao conexao, String nome, LocalDate data) {
+    // ignorarCodigo: na alteração, a própria atividade não conta como repetida.
+    public boolean existeMesmoNomeEData(Conexao conexao, String nome, LocalDate data, int ignorarCodigo) {
         ResultSet rs = conexao.consultar(
-                "SELECT 1 FROM atividade_especial WHERE LOWER(atv_nome) = LOWER(?) AND atv_data = ?", nome, data);
+                "SELECT 1 FROM atividade_especial WHERE LOWER(atv_nome) = LOWER(?) AND atv_data = ? AND atv_cod <> ?",
+                nome, data, ignorarCodigo);
         try {
             return rs != null && rs.next();
         } catch (SQLException sqlex) {

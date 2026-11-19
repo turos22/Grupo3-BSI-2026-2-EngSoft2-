@@ -69,6 +69,18 @@ public class AtividadePaga {
         return new AtividadePagaDAO().gravar(conexao, this);
     }
 
+    public boolean alterar(Conexao conexao) {
+        return new AtividadePagaDAO().alterar(conexao, this);
+    }
+
+    public boolean apagar(Conexao conexao) {
+        return new AtividadePagaDAO().apagar(conexao, codigo);
+    }
+
+    public boolean temVinculos(Conexao conexao) {
+        return new AtividadePagaDAO().temVinculos(conexao, codigo);
+    }
+
     public AtividadePaga buscar(Conexao conexao, int codigo) {
         return new AtividadePagaDAO().get(conexao, codigo);
     }
@@ -78,8 +90,9 @@ public class AtividadePaga {
     }
 
     // Fluxo alternativo 6.3: mesma atividade = mesmo nome (sem diferenciar maiúsculas) e mesma data.
+    // Na alteração (codigo preenchido) a própria atividade não conta.
     public boolean jaCadastrada(Conexao conexao) {
-        return new AtividadePagaDAO().existeMesmoNomeEData(conexao, nome, data);
+        return new AtividadePagaDAO().existeMesmoNomeEData(conexao, nome, data, codigo);
     }
 
     public int getCodigo() {
