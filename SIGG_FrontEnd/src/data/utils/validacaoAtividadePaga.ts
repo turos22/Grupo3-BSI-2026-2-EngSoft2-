@@ -13,8 +13,18 @@ export interface DadosFormAtividadePaga {
 export type CampoAtividadePaga = keyof DadosFormAtividadePaga
 export type ErrosAtividadePaga = Partial<Record<CampoAtividadePaga, string>>
 
-// Mesmas regras do AtividadePaga.validar() / AtividadePagaFacade.ofertar() no backend, campo a campo
-export function validarAtividadePaga(dados: DadosFormAtividadePaga, hoje: string): ErrosAtividadePaga {
+// Datas já gravadas na atividade que está sendo alterada: elas podem continuar no passado
+export interface DatasOriginais {
+  data: string
+  prazoInteresse: string
+}
+
+// Mesmas regras do AtividadePaga.validar() / AtividadePagaFacade (ofertar e alterar) no backend, campo a campo
+export function validarAtividadePaga(
+  dados: DadosFormAtividadePaga,
+  hoje: string,
+  original?: DatasOriginais,
+): ErrosAtividadePaga {
   const erros: ErrosAtividadePaga = {}
   const nome = dados.nome.trim()
   const local = dados.local.trim()
@@ -26,10 +36,10 @@ export function validarAtividadePaga(dados: DadosFormAtividadePaga, hoje: string
   if (dados.descricao.trim().length > 200) erros.descricao = 'A descrição deve ter até 200 caracteres.'
 
   if (!dados.data) erros.data = 'Informe a data de realização.'
-  else if (dados.data < hoje) erros.data = 'A data de realização não pode estar no passado.'
+  else if (dados.data < hoje && dados.data !== original?.data) erros.data = 'A data de realização não pode estar no passado.'
 
   if (!dados.prazoInteresse) erros.prazoInteresse = 'Informe o prazo para manifestação de interesse.'
-  else if (dados.prazoInteresse < hoje) erros.prazoInteresse = 'O prazo não pode estar no passado.'
+  else if (dados.prazoInteresse < hoje && dados.prazoInteresse !== original?.prazoInteresse) erros.prazoInteresse = 'O prazo não pode estar no passado.'
   else if (dados.data && dados.prazoInteresse > dados.data)
     erros.prazoInteresse = 'O prazo não pode ser depois da data da atividade.'
 

@@ -1,8 +1,10 @@
 package com.example.sigg_backend;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,7 +21,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
-// RF_F5 Ofertar Novas Atividades Pagas: fluxo básico e fluxos alternativos 6.1 e 6.3.
+// RF_F5 Ofertar Novas Atividades Pagas: fluxo básico, fluxos alternativos 6.1 e 6.3, alteração e exclusão.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -41,6 +43,15 @@ class OfertaDeAtividadePagaTest {
 
     private ResultActions ofertar(String json) throws Exception {
         return mvc.perform(post("/atividades-pagas").contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
+    private ResultActions alterar(int codigo, String json) throws Exception {
+        return mvc.perform(put("/atividades-pagas/" + codigo).contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
+    private int ofertarECodigo(String nome) throws Exception {
+        ofertar(atividade(nome, daquiUmMes, daquiDuasSemanas)).andExpect(status().isCreated());
+        return jdbc.queryForObject("SELECT atv_cod FROM atividade_especial WHERE atv_nome = ?", Integer.class, nome);
     }
 
     private int contar(String sql, Object... valores) {
@@ -115,5 +126,71 @@ class OfertaDeAtividadePagaTest {
         ofertar(atividade("Sem vagas", daquiUmMes, daquiDuasSemanas).replace("\"vagas\":30", "\"vagas\":0"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.erro").value("O número de vagas deve ser maior que zero"));
+    }
+
+    @Test
+    void alterarGravaOsNovosDados() throws Exception {
+        int codigo = ofertarECodigo("Acantonamento");
+
+        alterar(codigo, atividade("Acantonamento de Inverno", daquiUmMes, daquiDuasSemanas)
+                .replace("Sítio Boa Vista", "Chácara Recanto").replace("\"vagas\":30", "\"vagas\":40"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.codigo").value(codigo))
+                .andExpect(jsonPath("$.nome").value("Acantonamento de Inverno"));
+
+        assertEquals(1, contar("SELECT count(*) FROM atividade_especial WHERE atv_cod = ?"
+                + " AND atv_nome = 'Acantonamento de Inverno' AND atv_local = 'Chácara Recanto' AND atv_vagas = 40",
+                codigo));
+    }
+
+    @Test
+    void alterarSemMudarNomeEDataNaoContaComoRepetida() throws Exception {
+        int codigo = ofertarECodigo("Rapel");
+        alterar(codigo, atividade("Rapel", daquiUmMes, daquiDuasSemanas).replace("150.50", "99.90"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void alterarParaNomeEDataDeOutraAtividadeERecusado() throws Exception {
+        ofertarECodigo("Canoagem");
+        int codigo = ofertarECodigo("Escalada");
+        alterar(codigo, atividade("CANOAGEM", daquiUmMes, daquiDuasSemanas))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erro")
+                        .value("Já existe uma atividade paga cadastrada com o mesmo nome e data de realização"));
+    }
+
+    @Test
+    void alterarValidaOsCamposEAAtividadePrecisaExistir() throws Exception {
+        int codigo = ofertarECodigo("Ciclismo");
+        alterar(codigo, "{\"nome\":\"Ciclismo\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erro").value(Matchers.startsWith("Campos obrigatórios não preenchidos")));
+        alterar(codigo, atividade("Ciclismo", LocalDate.now().minusDays(1), LocalDate.now().minusDays(2)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erro").value("A data de realização não pode estar no passado"));
+        alterar(99999, atividade("Ciclismo", daquiUmMes, daquiDuasSemanas)).andExpect(status().isNotFound());
+        // Reunião semanal não é atividade paga
+        alterar(2, atividade("Ciclismo", daquiUmMes, daquiDuasSemanas)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void excluirApagaAAtividadeSemInscricoes() throws Exception {
+        int codigo = ofertarECodigo("Gincana");
+        mvc.perform(delete("/atividades-pagas/" + codigo))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mensagem").value("Atividade Gincana excluída"));
+        assertEquals(0, contar("SELECT count(*) FROM atividade_especial WHERE atv_cod = ?", codigo));
+        mvc.perform(delete("/atividades-pagas/" + codigo)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void excluirAtividadeComPagamentosERecusado() throws Exception {
+        // Passeio ao Zoológico (6) tem contas a receber no dump
+        mvc.perform(delete("/atividades-pagas/6"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erro")
+                        .value("Não é possível excluir a atividade: ela já tem inscrições ou pagamentos registrados"));
+        assertEquals(1, contar("SELECT count(*) FROM atividade_especial WHERE atv_cod = 6"));
     }
 }
