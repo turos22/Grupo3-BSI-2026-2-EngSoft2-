@@ -17,6 +17,7 @@ public class Frequencia {
     private int esc_cod;
     private LocalDate data;
     private String status;
+    private int ativo;
 
     public Frequencia() {
     }
@@ -62,5 +63,13 @@ public class Frequencia {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public int getAtivo() {
+        return ativo;
+    }
+
+    public void setAtivo(int ativo) {
+        this.ativo = ativo;
     }
 }

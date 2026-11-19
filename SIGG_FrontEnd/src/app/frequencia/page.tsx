@@ -46,7 +46,7 @@ const colunas: ColunaGrade<ResumoChamada>[] = [
 const chaveDe = (c: ResumoChamada) => `${c.tropa.cod}|${c.data}`
 
 // Lançamento cancelado: os registros continuam, mas pendentes (C), esperando ser lançados de novo
-const pendente = (c: ResumoChamada) => c.total === 0 && c.pendentes > 0
+const pendente = (c: ResumoChamada) => c.pendentes > 0
 
 export default function PaginaFrequencia() {
   const { usuario } = useSessao()
@@ -126,6 +126,7 @@ export default function PaginaFrequencia() {
   // Duplo clique e botão: chamada pendente abre para editar; lançada abre só para ver
   const abrir = (c: ResumoChamada | null) => {
     if (!c) return
+    console.log(chamada);
     if (pendente(c)) setEditando(true)
     else setVendo(true)
   }

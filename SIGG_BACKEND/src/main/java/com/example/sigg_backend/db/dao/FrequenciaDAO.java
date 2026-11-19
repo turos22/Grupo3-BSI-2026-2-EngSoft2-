@@ -68,7 +68,7 @@ public class FrequenciaDAO {
         ResultSet rs = conexao.consultar(
                 "SELECT t.tro_cod, t.tro_nome, f.freq_data, COUNT(*) FILTER (WHERE f.freq_status = 'P') AS presentes,"
                         + " COUNT(*) FILTER (WHERE f.freq_status <> 'C') AS total,"
-                        + " COUNT(*) FILTER (WHERE f.freq_status = 'C') AS pendentes"
+                        + " COUNT(*) FILTER (WHERE f.freq_ativo = 0) AS pendentes"
                         + " FROM frequencia f JOIN escoteiro e ON e.esc_cod = f.escoteiro_esc_cod"
                         + " JOIN patrulha p ON p.pat_cod = e.patrulha_pat_cod2"
                         + " JOIN tropa t ON t.tro_cod = p.tropa_tro_cod"
@@ -89,7 +89,7 @@ public class FrequenciaDAO {
     // Lançamento = algum registro P, F ou J na data; só registros C (cancelados) não contam
     public boolean existeLancamento(Conexao conexao, int troCod, LocalDate data){
         ResultSet rs = conexao.consultar("SELECT 1 FROM frequencia f WHERE f.freq_data = ? AND f.freq_status <> 'C'"
-                + " AND f.escoteiro_esc_cod IN"
+                + " AND f.escoteiro_esc_cod IN AND f.freq_ativo = 1"
                 + " (SELECT e.esc_cod" + ESCOTEIROS_DA_TROPA + ")", data, troCod);
         try {
             return rs != null && rs.next();
@@ -99,6 +99,14 @@ public class FrequenciaDAO {
     }
 
     public boolean gravar(Conexao conexao, Frequencia frequencia){
+        if (frequencia.getAtivo() == 0)
+            return conexao.manipular(
+                    "UPDATE frequencia SET freq_status = ?, freq_ativo = 1 "
+                            + " WHERE escoteiro_esc_cod = ? AND freq_data = ?",
+                    frequencia.getStatus(),
+                    frequencia.getEsc_cod(),
+                    java.sql.Date.valueOf(frequencia.getData())
+            );
         int ultimo = conexao.getMaxPK("frequencia", "freq_cod");
         if (ultimo < 0)
             return false;
@@ -111,8 +119,8 @@ public class FrequenciaDAO {
 
     // Cancelar não apaga: marca C (pendente de lançamento); lançar de novo sobrescreve pelo ON CONFLICT do gravar
     public boolean cancelarDaTropa(Conexao conexao, int troCod, LocalDate data){
-        return conexao.manipular("UPDATE frequencia SET freq_status = ? WHERE freq_data = ? AND freq_status <> ?"
+        return conexao.manipular("UPDATE frequencia SET freq_ativo = ? WHERE freq_data = ?"
                 + " AND escoteiro_esc_cod IN (SELECT e.esc_cod" + ESCOTEIROS_DA_TROPA + ")",
-                Frequencia.CANCELADO, data, Frequencia.CANCELADO, troCod);
+                0, data, troCod);
     }
 }

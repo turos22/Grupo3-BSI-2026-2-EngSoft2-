@@ -10,6 +10,7 @@ public class ItemChamada {
     private String nome;
     private String patrulha;
     private String status;
+    private int ativo;
     private BigDecimal percentual_ano;
 
     public int getEsc_cod() {
@@ -58,5 +59,13 @@ public class ItemChamada {
 
     public void setPercentual_ano(BigDecimal percentual_ano) {
         this.percentual_ano = percentual_ano;
+    }
+
+    public int getAtivo() {
+        return ativo;
+    }
+
+    public void setAtivo(int ativo) {
+        this.ativo = ativo;
     }
 }

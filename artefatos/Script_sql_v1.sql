@@ -2057,4 +2057,8 @@ BEGIN
     END IF;
 END $$;
 
+ALTER TABLE frequencia ADD COLUMN freq_ativo int4 default 1
+
 COMMIT;
+
+
