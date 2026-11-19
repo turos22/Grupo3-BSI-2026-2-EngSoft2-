@@ -37,6 +37,11 @@ public class ContribuicaoController {
         return ResponseEntity.ok(facade.listarDoAnjo(conexao, memCod));
     }
 
+    @GetMapping("/candidatos")
+    public ResponseEntity<Object> candidatos(){
+        return ResponseEntity.ok(facade.candidatos(conexao));
+    }
+
     @GetMapping("/verificacao")
     public ResponseEntity<Object> verificar(@RequestParam("cpfAnjo") String cpfAnjo,
                                             @RequestParam("cpfAdotado") String cpfAdotado){
