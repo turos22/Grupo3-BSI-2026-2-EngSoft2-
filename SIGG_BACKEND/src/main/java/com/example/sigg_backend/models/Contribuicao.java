@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import com.example.sigg_backend.db.dao.ContribuicaoDAO;
+import com.example.sigg_backend.db.util.Conexao;
 
 public class Contribuicao {
     private int con_cod;
@@ -13,6 +14,8 @@ public class Contribuicao {
     private int adotado;
     private String nome_anjo;
     private String nome_adotado;
+    private String cpf_anjo;
+    private String cpf_adotado;
 
     public Contribuicao() {
     }
@@ -25,16 +28,16 @@ public class Contribuicao {
         return null;
     }
 
-    public boolean gravar() {
-        return new ContribuicaoDAO().gravar(this);
+    public boolean gravar(Conexao conexao) {
+        return new ContribuicaoDAO().gravar(conexao, this);
     }
 
-    public List<Contribuicao> listar() {
-        return new ContribuicaoDAO().get();
+    public List<Contribuicao> listar(Conexao conexao) {
+        return new ContribuicaoDAO().get(conexao);
     }
 
-    public List<Contribuicao> doAnjo(int escCodAnjo) {
-        return new ContribuicaoDAO().doAnjo(escCodAnjo);
+    public List<Contribuicao> doAnjo(Conexao conexao, int escCodAnjo) {
+        return new ContribuicaoDAO().doAnjo(conexao, escCodAnjo);
     }
 
     public int getCon_cod() {
@@ -83,6 +86,22 @@ public class Contribuicao {
 
     public void setNome_anjo(String nome_anjo) {
         this.nome_anjo = nome_anjo;
+    }
+
+    public String getCpf_anjo() {
+        return cpf_anjo;
+    }
+
+    public void setCpf_anjo(String cpf_anjo) {
+        this.cpf_anjo = cpf_anjo;
+    }
+
+    public String getCpf_adotado() {
+        return cpf_adotado;
+    }
+
+    public void setCpf_adotado(String cpf_adotado) {
+        this.cpf_adotado = cpf_adotado;
     }
 
     public String getNome_adotado() {
