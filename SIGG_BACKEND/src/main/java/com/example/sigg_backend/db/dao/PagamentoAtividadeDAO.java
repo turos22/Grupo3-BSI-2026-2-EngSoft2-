@@ -3,7 +3,6 @@ package com.example.sigg_backend.db.dao;
 import com.example.sigg_backend.db.util.Conexao;
 import com.example.sigg_backend.db.util.Datas;
 import com.example.sigg_backend.db.util.IDAO;
-import com.example.sigg_backend.models.Escoteiro;
 import com.example.sigg_backend.models.FormaPagamento;
 import com.example.sigg_backend.models.PagamentoAtividade;
 
@@ -13,7 +12,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class PagamentoAtividadeDAO implements IDAO<PagamentoAtividade> {
 
@@ -63,25 +64,36 @@ public class PagamentoAtividadeDAO implements IDAO<PagamentoAtividade> {
         return lista.toArray(new FormaPagamento[0]);
     }
 
-    public Escoteiro[] listarEscoteirosComResumo(Conexao conexao) {
-        List<Escoteiro> lista = new ArrayList<>();
-        String sql = "SELECT " + EscoteiroDAO.COLUNAS + " FROM escoteiro e"
-                + " JOIN membro m ON m.mem_cod = e.mem_cod"
-                + EscoteiroDAO.JUNCAO_PATRULHA
-                + " WHERE m.mem_dt_fim IS NULL"
-                + " ORDER BY e.esc_sit_fin ASC, m.mem_nome ASC";
+    public Map<Integer, int[]> resumirPendenciasPorEscoteiro(Conexao conexao) {
+        String sql = "SELECT x.esc_cod,"
+                + " COUNT(*) AS abertas,"
+                + " COUNT(*) FILTER (WHERE x.vencimento < CURRENT_DATE) AS atrasadas"
+                + " FROM ("
+                + "   SELECT me.escoteiro_esc_cod AS esc_cod, cr.cr_cod, cr.cr_valor,"
+                + "          COALESCE(SUM(p.pg_valor_pago), 0) AS pago,"
+                + "          MIN(p.pg_dt_vencto) AS vencimento"
+                + "   FROM contas_receber cr"
+                + "   JOIN mensalidade me ON me.mens_cod = cr.mensalidade_mens_cod"
+                + "   LEFT JOIN pagamento p ON p.contas_receber_cr_cod = cr.cr_cod"
+                + "   WHERE cr.atividade_especial_atv_cod <> " + ATIVIDADE_MENSALIDADE
+                + "   GROUP BY me.escoteiro_esc_cod, cr.cr_cod, cr.cr_valor"
+                + " ) x"
+                + " WHERE x.pago < x.cr_valor"
+                + " GROUP BY x.esc_cod";
+
+        Map<Integer, int[]> mapa = new HashMap<>();
         ResultSet rs = conexao.consultar(sql);
         try {
-            EscoteiroDAO escDao = new EscoteiroDAO();
             while (rs != null && rs.next()) {
-                Escoteiro esc = new Escoteiro();
-                escDao.preencher(esc, rs);
-                lista.add(esc);
+                mapa.put(
+                        rs.getInt("esc_cod"),
+                        new int[]{rs.getInt("abertas"), rs.getInt("atrasadas")}
+                );
             }
         } catch (SQLException sqlex) {
-            lista.clear();
+            mapa.clear();
         }
-        return lista.toArray(new Escoteiro[0]);
+        return mapa;
     }
 
     public BigDecimal calcularCreditoDisponivel(Conexao conexao, int escCod) {

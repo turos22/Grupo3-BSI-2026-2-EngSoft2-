@@ -132,6 +132,8 @@ export default function PaginaPagamentosMensalidade() {
     const [carregando, setCarregando] = useState(false)
     const [erro, setErro] = useState('')
     const [erroModal, setErroModal] = useState('')
+    const [erroValor, setErroValor] = useState('')
+    const [erroData, setErroData] = useState('')
     const [sucesso, setSucesso] = useState('')
 
     // Modal de Registrar Pagamento
@@ -269,6 +271,8 @@ export default function PaginaPagamentosMensalidade() {
         setConfirmouDivergencia(false)
         setErro('')
         setErroModal('')
+        setErroValor('')
+        setErroData('')
         setSucesso('')
     }
 
@@ -291,15 +295,17 @@ export default function PaginaPagamentosMensalidade() {
 
     const saldoDevido = parcelaPagar ? Number(parcelaPagar.saldo ?? 0) : 0
     const creditoAplicado = usarCredito ? Math.min(creditoDisponivel, saldoDevido) : 0
-    const valorNumerico = parseFloat(valorRecebido) || 0
-    const totalAplicado = Number((valorNumerico + creditoAplicado).toFixed(2))
+    const valorNumerico = parseFloat(valorRecebido)
+    const valorNumericoSeguro = Number.isNaN(valorNumerico) ? 0 : valorNumerico
+    const totalAplicado = Number((valorNumericoSeguro + creditoAplicado).toFixed(2))
     const diferenca = Number((totalAplicado - saldoDevido).toFixed(2))
-    const temDivergencia = parcelaPagar !== null && Math.abs(diferenca) >= 0.01
+    const temDivergencia = parcelaPagar !== null && !Number.isNaN(valorNumerico) && Math.abs(diferenca) >= 0.01
 
     const handleAlternarCredito = (marcado: boolean) => {
         setUsarCredito(marcado)
         setConfirmouDivergencia(false)
         setErroModal('')
+        setErroValor('')
         if (marcado) {
             const abatimento = Math.min(creditoDisponivel, saldoDevido)
             const restante = Math.max(0, saldoDevido - abatimento)
@@ -313,20 +319,33 @@ export default function PaginaPagamentosMensalidade() {
         e.preventDefault()
         if (!parcelaPagar || !situacao) return
 
-        if (valorNumerico < 0) {
-            setErroModal('O valor recebido não pode ser negativo.')
-            return
-        }
-        if (valorNumerico === 0 && creditoAplicado === 0) {
-            setErroModal('Informe um valor recebido maior que zero.')
-            return
+        setErroValor('')
+        setErroData('')
+        setErroModal('')
+
+        let invalido = false
+
+        if (valorRecebido.trim() === '' || Number.isNaN(valorNumerico)) {
+            setErroValor('Informe o valor recebido.')
+            invalido = true
+        } else if (valorNumerico < 0) {
+            setErroValor('O valor recebido não pode ser negativo.')
+            invalido = true
+        } else if (valorNumerico === 0 && creditoAplicado === 0) {
+            setErroValor('O valor recebido deve ser maior que zero.')
+            invalido = true
         }
 
         const hojeIso = dataHojeIso()
-        if (!dataPagamento || dataPagamento > hojeIso) {
-            setErroModal('A data do pagamento não pode ser futura (superior à data de hoje).')
-            return
+        if (!dataPagamento) {
+            setErroData('Informe a data do pagamento.')
+            invalido = true
+        } else if (dataPagamento > hojeIso) {
+            setErroData('A data do pagamento não pode ser futura (superior à data de hoje).')
+            invalido = true
         }
+
+        if (invalido) return
 
         if (temDivergencia && !confirmouDivergencia) {
             setConfirmouDivergencia(true)
@@ -334,11 +353,10 @@ export default function PaginaPagamentosMensalidade() {
         }
 
         setCarregando(true)
-        setErroModal('')
         setErro('')
         try {
             const resp = await registrarPagamentoMensalidade(parcelaPagar.crCod, {
-                valorRecebido: valorNumerico,
+                valorRecebido: valorNumericoSeguro,
                 formaPagamentoCod,
                 dataPagamento,
                 creditoUtilizado: creditoAplicado > 0 ? creditoAplicado : undefined,
@@ -661,7 +679,7 @@ export default function PaginaPagamentosMensalidade() {
 
             {/* Modal para Registrar Pagamento */}
             <Dialog open={parcelaPagar !== null} onClose={() => setParcelaPagar(null)} maxWidth="xs" fullWidth>
-                <form onSubmit={handleConfirmarPagamento}>
+                <form onSubmit={handleConfirmarPagamento} noValidate>
                     <DialogTitle>Registrar Pagamento — {parcelaPagar?.referencia}</DialogTitle>
                     <DialogContent>
                         <Stack spacing={2} sx={{ mt: 1 }}>
@@ -704,13 +722,16 @@ export default function PaginaPagamentosMensalidade() {
                                 onChange={(e) => {
                                     setValorRecebido(e.target.value)
                                     setConfirmouDivergencia(false)
+                                    setErroValor('')
                                     setErroModal('')
                                 }}
+                                error={Boolean(erroValor)}
+                                helperText={erroValor}
                                 required
                                 fullWidth
                             />
 
-                            {temDivergencia && (
+                            {temDivergencia && !erroValor && (
                                 <Alert severity={diferenca < 0 ? 'warning' : 'info'}>
                                     Total aplicado: <strong>{formatarMoeda(totalAplicado)}</strong> | Saldo devido:{' '}
                                     <strong>{formatarMoeda(saldoDevido)}</strong> | Diferença:{' '}
@@ -746,8 +767,11 @@ export default function PaginaPagamentosMensalidade() {
                                 value={dataPagamento}
                                 onChange={(e) => {
                                     setDataPagamento(e.target.value)
+                                    setErroData('')
                                     setErroModal('')
                                 }}
+                                error={Boolean(erroData)}
+                                helperText={erroData}
                                 required
                                 fullWidth
                             />

@@ -3,7 +3,6 @@ package com.example.sigg_backend.db.dao;
 import com.example.sigg_backend.db.util.Conexao;
 import com.example.sigg_backend.db.util.Datas;
 import com.example.sigg_backend.db.util.IDAO;
-import com.example.sigg_backend.models.Escoteiro;
 import com.example.sigg_backend.models.FormaPagamento;
 import com.example.sigg_backend.models.PagamentoMensalidade;
 import com.example.sigg_backend.models.SituacaoEscoteiro;
@@ -61,27 +60,6 @@ public class PagamentoMensalidadeDAO implements IDAO<PagamentoMensalidade> {
             lista.clear();
         }
         return lista.toArray(new FormaPagamento[0]);
-    }
-
-    public Escoteiro[] listarEscoteirosComResumo(Conexao conexao) {
-        List<Escoteiro> lista = new ArrayList<>();
-        String sql = "SELECT " + EscoteiroDAO.COLUNAS + " FROM escoteiro e"
-                + " JOIN membro m ON m.mem_cod = e.mem_cod"
-                + EscoteiroDAO.JUNCAO_PATRULHA
-                + " WHERE m.mem_dt_fim IS NULL"
-                + " ORDER BY e.esc_sit_fin DESC, m.mem_nome ASC";
-        ResultSet rs = conexao.consultar(sql);
-        try {
-            EscoteiroDAO escDao = new EscoteiroDAO();
-            while (rs != null && rs.next()) {
-                Escoteiro esc = new Escoteiro();
-                escDao.preencher(esc, rs);
-                lista.add(esc);
-            }
-        } catch (SQLException sqlex) {
-            lista.clear();
-        }
-        return lista.toArray(new Escoteiro[0]);
     }
 
     public BigDecimal calcularCreditoDisponivel(Conexao conexao, int escCod) {
@@ -390,7 +368,7 @@ public class PagamentoMensalidadeDAO implements IDAO<PagamentoMensalidade> {
         }
     }
 
-    public String buscarMensalidadeAnteriorEmAberto(Conexao conexao, int escCod, int crCodAtual) {
+    public String buscarMensalidadeAnteriorEmAberto(Conexao conexao, PagamentoMensalidade pag) {
         String sql = "SELECT me.mens_mes, me.mens_ano"
                 + " FROM mensalidade me"
                 + " JOIN contas_receber cr ON cr.mensalidade_mens_cod = me.mens_cod"
@@ -408,7 +386,7 @@ public class PagamentoMensalidadeDAO implements IDAO<PagamentoMensalidade> {
                 + " ORDER BY me.mens_ano ASC, me.mens_mes ASC, cr.cr_cod ASC"
                 + " LIMIT 1";
 
-        ResultSet rs = conexao.consultar(sql, crCodAtual, escCod, crCodAtual);
+        ResultSet rs = conexao.consultar(sql, pag.getCrCod(), pag.getEscCod(), pag.getCrCod());
         try {
             if (rs != null && rs.next()) {
                 return String.format("%02d/%04d", rs.getInt("mens_mes"), rs.getInt("mens_ano"));
@@ -419,7 +397,7 @@ public class PagamentoMensalidadeDAO implements IDAO<PagamentoMensalidade> {
         return null;
     }
 
-    public String buscarMensalidadePosteriorComPagamento(Conexao conexao, int escCod, int crCodAtual) {
+    public String buscarMensalidadePosteriorComPagamento(Conexao conexao, PagamentoMensalidade pag) {
         String sql = "SELECT me.mens_mes, me.mens_ano"
                 + " FROM mensalidade me"
                 + " JOIN contas_receber cr ON cr.mensalidade_mens_cod = me.mens_cod"
@@ -437,7 +415,7 @@ public class PagamentoMensalidadeDAO implements IDAO<PagamentoMensalidade> {
                 + " ORDER BY me.mens_ano DESC, me.mens_mes DESC, cr.cr_cod DESC"
                 + " LIMIT 1";
 
-        ResultSet rs = conexao.consultar(sql, crCodAtual, escCod, crCodAtual);
+        ResultSet rs = conexao.consultar(sql, pag.getCrCod(), pag.getEscCod(), pag.getCrCod());
         try {
             if (rs != null && rs.next()) {
                 return String.format("%02d/%04d", rs.getInt("mens_mes"), rs.getInt("mens_ano"));

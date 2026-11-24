@@ -20,7 +20,7 @@ import {
 } from '@/data/services/tiposAtividade'
 
 const colunas: ColunaGrade<TipoAtividade>[] = [
-    { id: 'codigo', titulo: 'Código', valor: (t) => t.ta_cod, largura: 120 },
+    { id: 'codigo', titulo: 'Código', valor: (t) => t.ta_cod, largura: 110 },
     { id: 'descricao', titulo: 'Descrição', valor: (t) => t.ta_desc },
 ]
 
@@ -42,6 +42,7 @@ export default function PaginaTiposAtividade() {
     const [salvando, setSalvando] = useState(false)
     const [erro, setErro] = useState('')
     const [erroModal, setErroModal] = useState('')
+    const [erroDescricao, setErroDescricao] = useState('')
     const [sucesso, setSucesso] = useState('')
 
     const [selecionado, setSelecionado] = useState<TipoAtividade | null>(null)
@@ -89,15 +90,17 @@ export default function PaginaTiposAtividade() {
         setDescricao('')
         setErro('')
         setErroModal('')
+        setErroDescricao('')
         setSucesso('')
         setModalAberto(true)
     }
 
     const abrirEdicao = (item: TipoAtividade) => {
         setSelecionado(item)
-        setDescricao(item.ta_desc)
+        setDescricao(item.ta_desc ?? '')
         setErro('')
         setErroModal('')
+        setErroDescricao('')
         setSucesso('')
         setModalAberto(true)
     }
@@ -106,11 +109,16 @@ export default function PaginaTiposAtividade() {
         e.preventDefault()
         setErro('')
         setErroModal('')
+        setErroDescricao('')
         setSucesso('')
 
         const descLimpa = descricao.trim()
         if (!descLimpa) {
-            setErroModal('A descrição do tipo de atividade é obrigatória.')
+            setErroDescricao('A descrição do tipo de atividade é obrigatória.')
+            return
+        }
+        if (descLimpa.length > 100) {
+            setErroDescricao('A descrição deve ter no máximo 100 caracteres.')
             return
         }
 
@@ -130,7 +138,12 @@ export default function PaginaTiposAtividade() {
             setSelecionado(null)
             await carregar()
         } catch (err) {
-            setErroModal(extrairMensagemErro(err, 'Erro inesperado ao salvar.'))
+            const msg = extrairMensagemErro(err, 'Erro inesperado ao salvar.')
+            if (msg.toLowerCase().includes('descrição')) {
+                setErroDescricao(msg)
+            } else {
+                setErroModal(msg)
+            }
         } finally {
             setSalvando(false)
         }
@@ -138,12 +151,13 @@ export default function PaginaTiposAtividade() {
 
     const handleExcluir = async () => {
         if (!selecionado) return
+        const alvo = selecionado
         setConfirmandoExclusao(false)
         setErro('')
         setSucesso('')
 
         try {
-            await apagarTipoAtividade(selecionado.ta_cod)
+            await apagarTipoAtividade(alvo.ta_cod)
             setSucesso('Tipo de atividade excluído com sucesso!')
             setSelecionado(null)
             await carregar()
@@ -197,7 +211,7 @@ export default function PaginaTiposAtividade() {
             </Box>
 
             <Dialog open={modalAberto} onClose={() => setModalAberto(false)} maxWidth="xs" fullWidth>
-                <form onSubmit={handleSalvar}>
+                <form onSubmit={handleSalvar} noValidate>
                     <DialogTitle>{selecionado ? 'Editar Tipo de Atividade' : 'Novo Tipo de Atividade'}</DialogTitle>
                     <DialogContent>
                         <Stack spacing={2} sx={{ mt: 1 }}>
@@ -211,9 +225,12 @@ export default function PaginaTiposAtividade() {
                                 value={descricao}
                                 onChange={(e) => {
                                     setDescricao(e.target.value)
+                                    setErroDescricao('')
                                     setErroModal('')
                                 }}
                                 slotProps={{ htmlInput: { maxLength: 100 } }}
+                                error={Boolean(erroDescricao)}
+                                helperText={erroDescricao}
                                 required
                                 fullWidth
                             />

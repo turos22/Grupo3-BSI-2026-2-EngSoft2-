@@ -5,11 +5,12 @@ import com.example.sigg_backend.facade.AutorizacaoFacade;
 import com.example.sigg_backend.facade.NaoEncontradoException;
 import com.example.sigg_backend.facade.RegraNegocioException;
 import com.example.sigg_backend.models.TipoAtividade;
-import java.util.List;
-import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/tipos-atividade")
@@ -40,7 +41,7 @@ public class TipoAtividadeController {
     @GetMapping("/{id}")
     public ResponseEntity<Object> buscarPorId(@PathVariable int id) {
         autorizacao.exigirDiretoria(conexao);
-        TipoAtividade tipo = new TipoAtividade().buscarPorId(conexao, id);
+        TipoAtividade tipo = new TipoAtividade().buscar(conexao, id);
         if (tipo == null) {
             throw new NaoEncontradoException("Tipo de atividade não encontrado.");
         }
@@ -54,9 +55,8 @@ public class TipoAtividadeController {
             throw new RegraNegocioException("Dados do tipo de atividade são obrigatórios.");
         }
 
-        String desc = extrairDescricao(corpo);
         TipoAtividade tipo = new TipoAtividade();
-        tipo.setDescricao(desc);
+        preencherTipoAtividade(tipo, 0, corpo);
 
         String problema = tipo.validar();
         if (problema != null) {
@@ -74,16 +74,12 @@ public class TipoAtividadeController {
     @PutMapping("/{id}")
     public ResponseEntity<Object> atualizar(@PathVariable int id, @RequestBody Map<String, Object> corpo) {
         autorizacao.exigirDiretoria(conexao);
-        TipoAtividade existente = new TipoAtividade().buscarPorId(conexao, id);
-        if (existente == null) {
+        TipoAtividade tipo = new TipoAtividade().buscar(conexao, id);
+        if (tipo == null) {
             throw new NaoEncontradoException("Tipo de atividade não encontrado.");
         }
 
-        String desc = extrairDescricao(corpo);
-        TipoAtividade tipo = new TipoAtividade();
-        tipo.setId(id);
-        tipo.setDescricao(desc);
-
+        preencherTipoAtividade(tipo, id, corpo);
         String problema = tipo.validar();
         if (problema != null) {
             throw new RegraNegocioException(problema);
@@ -100,26 +96,24 @@ public class TipoAtividadeController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Object> excluir(@PathVariable int id) {
         autorizacao.exigirDiretoria(conexao);
-        TipoAtividade model = new TipoAtividade();
-        TipoAtividade existente = model.buscarPorId(conexao, id);
-        if (existente == null) {
+        TipoAtividade tipo = new TipoAtividade().buscar(conexao, id);
+        if (tipo == null) {
             throw new NaoEncontradoException("Tipo de atividade não encontrado.");
         }
-        if (model.possuiVinculos(conexao, id)) {
+        if (tipo.possuiVinculos(conexao, id)) {
             throw new RegraNegocioException("Não é possível excluir este tipo de atividade pois há atividades vinculadas a ele.");
         }
-        if (!existente.apagar(conexao)) {
+        if (!tipo.apagar(conexao)) {
             throw new IllegalStateException("Erro ao excluir tipo de atividade.");
         }
         return ResponseEntity.ok(Map.of("mensagem", "Tipo de atividade excluído com sucesso."));
     }
 
-    private String extrairDescricao(Map<String, Object> corpo) {
-        if (corpo == null) return "";
-        Object val = corpo.get("ta_desc");
-        if (val == null) {
-            val = corpo.get("descricao");
-        }
-        return val != null ? val.toString() : "";
+    private void preencherTipoAtividade(TipoAtividade tipo, int id, Map<String, Object> corpo) {
+        tipo.setId(id);
+
+        Object descObj = corpo.get("ta_desc");
+        if (descObj == null) descObj = corpo.get("descricao");
+        tipo.setDescricao(descObj != null ? descObj.toString() : "");
     }
 }
