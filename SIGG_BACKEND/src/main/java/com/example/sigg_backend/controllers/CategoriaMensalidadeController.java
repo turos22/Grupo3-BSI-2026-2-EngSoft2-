@@ -57,7 +57,9 @@ public class CategoriaMensalidadeController {
             throw new RegraNegocioException("Dados da categoria são obrigatórios.");
         }
 
-        CategoriaMensalidade categoria = montarCategoria(0, corpo);
+        CategoriaMensalidade categoria = new CategoriaMensalidade();
+        preencherCategoria(categoria, 0, corpo);
+
         String problema = categoria.validar();
         if (problema != null) {
             throw new RegraNegocioException(problema);
@@ -74,12 +76,12 @@ public class CategoriaMensalidadeController {
     @PutMapping("/{id}")
     public ResponseEntity<Object> atualizar(@PathVariable int id, @RequestBody Map<String, Object> corpo) {
         autorizacao.exigirPerfil(conexao, List.of(UsuarioLogado.ADMIN, UsuarioLogado.FINANCEIRO));
-        CategoriaMensalidade existente = new CategoriaMensalidade().buscar(conexao, id);
-        if (existente == null) {
+        CategoriaMensalidade categoria = new CategoriaMensalidade().buscar(conexao, id);
+        if (categoria == null) {
             throw new NaoEncontradoException("Categoria de mensalidade não encontrada.");
         }
 
-        CategoriaMensalidade categoria = montarCategoria(id, corpo);
+        preencherCategoria(categoria, id, corpo);
         String problema = categoria.validar();
         if (problema != null) {
             throw new RegraNegocioException(problema);
@@ -96,22 +98,20 @@ public class CategoriaMensalidadeController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Object> excluir(@PathVariable int id) {
         autorizacao.exigirPerfil(conexao, List.of(UsuarioLogado.ADMIN, UsuarioLogado.FINANCEIRO));
-        CategoriaMensalidade model = new CategoriaMensalidade();
-        CategoriaMensalidade existente = model.buscar(conexao, id);
-        if (existente == null) {
+        CategoriaMensalidade categoria = new CategoriaMensalidade().buscar(conexao, id);
+        if (categoria == null) {
             throw new NaoEncontradoException("Categoria de mensalidade não encontrada.");
         }
-        if (model.possuiVinculos(conexao, id)) {
+        if (categoria.possuiVinculos(conexao, id)) {
             throw new RegraNegocioException("Não é possível excluir esta categoria pois há escoteiros ou mensalidades vinculados a ela.");
         }
-        if (!existente.apagar(conexao)) {
+        if (!categoria.apagar(conexao)) {
             throw new IllegalStateException("Erro ao excluir categoria de mensalidade.");
         }
         return ResponseEntity.ok(Map.of("mensagem", "Categoria excluída com sucesso."));
     }
 
-    private CategoriaMensalidade montarCategoria(int id, Map<String, Object> corpo) {
-        CategoriaMensalidade cat = new CategoriaMensalidade();
+    private void preencherCategoria(CategoriaMensalidade cat, int id, Map<String, Object> corpo) {
         cat.setId(id);
 
         Object descObj = corpo.get("descricao");
@@ -144,7 +144,5 @@ public class CategoriaMensalidadeController {
         } else {
             cat.setQtdIrmao(0);
         }
-
-        return cat;
     }
 }

@@ -47,6 +47,12 @@ import { formatarData } from '@/data/utils/datas'
 import { mensagemDeErro } from '@/data/utils/erros'
 import { formatarCpf, formatarMoeda } from '@/data/utils/formatadores'
 
+type EscoteiroAtividadeResumo = Escoteiro & {
+    mensalidadeInadimplente?: boolean
+    atividadesAbertas?: number
+    atividadesAtrasadas?: number
+}
+
 const COR_SITUACAO: Record<SituacaoPagamentoAtividade, 'success' | 'error' | 'warning' | 'default'> = {
     PAGA: 'success',
     ATRASADA: 'error',
@@ -81,7 +87,7 @@ function obterDataAtividade(a?: PagamentoAtividade | null): string | null {
     return a.atividadeData ?? a.dataAtividade ?? null
 }
 
-function combinaBusca(e: Escoteiro, termo: string): boolean {
+function combinaBusca(e: EscoteiroAtividadeResumo, termo: string): boolean {
     const t = termo.trim().toLowerCase()
     if (!t) return true
     const digitos = t.replace(/\D/g, '')
@@ -90,23 +96,56 @@ function combinaBusca(e: Escoteiro, termo: string): boolean {
     return nome.includes(t) || (digitos !== '' && (cpf.includes(digitos) || String(e.esc_cod) === digitos))
 }
 
-const colunasEscoteiros: ColunaGrade<Escoteiro>[] = [
+const colunasEscoteiros: ColunaGrade<EscoteiroAtividadeResumo>[] = [
     { id: 'nome', titulo: 'Nome', valor: (e) => e.membro.nome },
     { id: 'cpf', titulo: 'CPF', valor: (e) => e.membro.CPF, renderizar: (e) => formatarCpf(e.membro.CPF) },
     { id: 'matricula', titulo: 'Matrícula', valor: (e) => e.esc_cod, largura: 110 },
     { id: 'tropa', titulo: 'Tropa', valor: (e) => e.patrulha?.tropa?.nome ?? '—' },
     { id: 'patrulha', titulo: 'Patrulha', valor: (e) => e.patrulha?.nome ?? '—' },
     {
-        id: 'situacao',
-        titulo: 'Situação Financeira',
-        valor: (e) => e.esc_sit_fin,
-        renderizar: (e) => (
-            <Chip
-                size="small"
-                color={e.esc_sit_fin === 1 ? 'error' : 'success'}
-                label={e.esc_sit_fin === 1 ? 'Inadimplente' : 'Em dia'}
-            />
-        ),
+        id: 'situacaoMensalidade',
+        titulo: 'Mensalidades',
+        valor: (e) => (e.mensalidadeInadimplente || e.esc_sit_fin === 1 ? 1 : 0),
+        renderizar: (e) => {
+            const bloq = e.mensalidadeInadimplente || e.esc_sit_fin === 1
+            return (
+                <Chip
+                    size="small"
+                    color={bloq ? 'error' : 'success'}
+                    label={bloq ? 'Inadimplente' : 'Em dia'}
+                />
+            )
+        },
+    },
+    {
+        id: 'situacaoAtividade',
+        titulo: 'Atividades Pagas',
+        valor: (e) => (e.atividadesAtrasadas ?? 0) * 100 + (e.atividadesAbertas ?? 0),
+        renderizar: (e) => {
+            const atrasadas = e.atividadesAtrasadas ?? 0
+            const abertas = e.atividadesAbertas ?? 0
+            if (atrasadas > 0) {
+                return (
+                    <Chip
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        label={`${atrasadas} em atraso`}
+                    />
+                )
+            }
+            if (abertas > 0) {
+                return (
+                    <Chip
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        label={`${abertas} em aberto`}
+                    />
+                )
+            }
+            return <Chip size="small" color="success" variant="outlined" label="Em dia" />
+        },
     },
 ]
 
@@ -114,7 +153,7 @@ export default function PaginaPagamentosAtividade() {
     const { parametrizacao } = useParametrizacao()
     const navegar = useNavigate()
     const [busca, setBusca] = useState('')
-    const [encontrados, setEncontrados] = useState<Escoteiro[]>([])
+    const [encontrados, setEncontrados] = useState<EscoteiroAtividadeResumo[]>([])
     const [tropas, setTropas] = useState<Tropa[]>([])
     const [tropaFiltro, setTropaFiltro] = useState<number>(TODAS)
     const [dadosEscoteiro, setDadosEscoteiro] = useState<AtividadesFinanceiroEscoteiro | null>(null)
@@ -127,6 +166,8 @@ export default function PaginaPagamentosAtividade() {
     const [carregando, setCarregando] = useState(false)
     const [erro, setErro] = useState('')
     const [erroModal, setErroModal] = useState('')
+    const [erroValor, setErroValor] = useState('')
+    const [erroData, setErroData] = useState('')
     const [sucesso, setSucesso] = useState('')
 
     const [atividadePagar, setAtividadePagar] = useState<PagamentoAtividade | null>(null)
@@ -146,7 +187,7 @@ export default function PaginaPagamentosAtividade() {
 
     const carregarListaInicial = () => {
         pesquisarEscoteirosAtividade('')
-            .then((lista) => setEncontrados(lista))
+            .then((lista) => setEncontrados(lista as EscoteiroAtividadeResumo[]))
             .catch(() => {})
     }
 
@@ -222,6 +263,8 @@ export default function PaginaPagamentosAtividade() {
         setConfirmouDivergencia(false)
         setErro('')
         setErroModal('')
+        setErroValor('')
+        setErroData('')
         setSucesso('')
     }
 
@@ -244,15 +287,17 @@ export default function PaginaPagamentosAtividade() {
 
     const valorBase = atividadePagar ? Number(atividadePagar.saldo ?? 0) : 0
     const creditoAplicado = usarCredito ? Math.min(creditoDisponivel, valorBase) : 0
-    const valorNumerico = parseFloat(valorRecebido) || 0
-    const totalAplicado = Number((valorNumerico + creditoAplicado).toFixed(2))
+    const valorNumerico = parseFloat(valorRecebido)
+    const valorNumericoSeguro = Number.isNaN(valorNumerico) ? 0 : valorNumerico
+    const totalAplicado = Number((valorNumericoSeguro + creditoAplicado).toFixed(2))
     const diferenca = Number((totalAplicado - valorBase).toFixed(2))
-    const temDivergencia = atividadePagar !== null && Math.abs(diferenca) >= 0.01
+    const temDivergencia = atividadePagar !== null && !Number.isNaN(valorNumerico) && Math.abs(diferenca) >= 0.01
 
     const handleAlternarCredito = (marcado: boolean) => {
         setUsarCredito(marcado)
         setConfirmouDivergencia(false)
         setErroModal('')
+        setErroValor('')
         if (marcado) {
             const abatimento = Math.min(creditoDisponivel, valorBase)
             const restante = Math.max(0, valorBase - abatimento)
@@ -266,20 +311,33 @@ export default function PaginaPagamentosAtividade() {
         e.preventDefault()
         if (!atividadePagar || !dadosEscoteiro) return
 
-        if (valorNumerico < 0) {
-            setErroModal('O valor recebido não pode ser negativo.')
-            return
-        }
-        if (valorNumerico === 0 && creditoAplicado === 0) {
-            setErroModal('Informe um valor recebido maior que zero.')
-            return
+        setErroValor('')
+        setErroData('')
+        setErroModal('')
+
+        let invalido = false
+
+        if (valorRecebido.trim() === '' || Number.isNaN(valorNumerico)) {
+            setErroValor('Informe o valor recebido.')
+            invalido = true
+        } else if (valorNumerico < 0) {
+            setErroValor('O valor recebido não pode ser negativo.')
+            invalido = true
+        } else if (valorNumerico === 0 && creditoAplicado === 0) {
+            setErroValor('Informe um valor recebido maior que zero.')
+            invalido = true
         }
 
         const hojeIso = dataHojeIso()
-        if (!dataPagamento || dataPagamento > hojeIso) {
-            setErroModal('A data do pagamento não pode ser futura (superior à data de hoje).')
-            return
+        if (!dataPagamento) {
+            setErroData('Informe a data do pagamento.')
+            invalido = true
+        } else if (dataPagamento > hojeIso) {
+            setErroData('A data do pagamento não pode ser futura (superior à data de hoje).')
+            invalido = true
         }
+
+        if (invalido) return
 
         if (temDivergencia && !confirmouDivergencia) {
             setConfirmouDivergencia(true)
@@ -287,11 +345,10 @@ export default function PaginaPagamentosAtividade() {
         }
 
         setCarregando(true)
-        setErroModal('')
         setErro('')
         try {
             const resp = await registrarPagamentoAtividade(atividadePagar.crCod, {
-                valorRecebido: valorNumerico,
+                valorRecebido: valorNumericoSeguro,
                 formaPagamentoCod,
                 dataPagamento,
                 creditoUtilizado: creditoAplicado > 0 ? creditoAplicado : undefined,
@@ -300,6 +357,7 @@ export default function PaginaPagamentosAtividade() {
             setRecibo(resp.recibo)
             setAtividadePagar(null)
             await carregarAtividades(dadosEscoteiro.esc_cod)
+            carregarListaInicial()
         } catch (err) {
             setErroModal(mensagemDeErro(err, 'Não foi possível registrar o pagamento da atividade.'))
         } finally {
@@ -321,6 +379,7 @@ export default function PaginaPagamentosAtividade() {
             const resp = await estornarPagamentoAtividade(crCodAlvo, pgCodAlvo)
             setSucesso(resp.mensagem)
             const dadosAtualizados = await carregarAtividades(dadosEscoteiro.esc_cod)
+            carregarListaInicial()
             const listaRestante = await listarLancamentosAtividade(crCodAlvo)
             setLancamentos(listaRestante)
             const atvAtualizada = dadosAtualizados?.atividades.find((a) => a.crCod === crCodAlvo) ?? null
@@ -337,6 +396,7 @@ export default function PaginaPagamentosAtividade() {
     }
 
     const bloqueadoPorInadimplencia = dadosEscoteiro?.inadimplente ?? false
+    const possuiAtividadeAtrasada = dadosEscoteiro?.atividades.some((a) => a.situacao === 'ATRASADA') ?? false
 
     const colunasAtividades: ColunaGrade<PagamentoAtividade>[] = [
         { id: 'atividade', titulo: 'Atividade', valor: (a) => a.atividadeNome },
@@ -468,7 +528,7 @@ export default function PaginaPagamentosAtividade() {
 
             {encontrados.length > 0 && (
                 <Grade
-                    titulo="Escoteiros (Inadimplentes bloqueados para atividades pagas)"
+                    titulo="Escoteiros (Inadimplentes em mensalidades bloqueados para atividades pagas)"
                     subtitulo="Clique sobre o escoteiro para consultar suas inscrições em atividades"
                     colunas={colunasEscoteiros}
                     linhas={escoteirosFiltrados}
@@ -505,12 +565,18 @@ export default function PaginaPagamentosAtividade() {
                                     {dadosEscoteiro.patrulha}
                                 </Typography>
                             </div>
-                            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                                 {creditoDisponivel > 0 && (
                                     <Chip
                                         color="info"
                                         variant="outlined"
                                         label={`Crédito disponível: ${formatarMoeda(creditoDisponivel)}`}
+                                    />
+                                )}
+                                {possuiAtividadeAtrasada && (
+                                    <Chip
+                                        color="warning"
+                                        label="Atividade com pagamento em atraso"
                                     />
                                 )}
                                 <Chip
@@ -535,6 +601,13 @@ export default function PaginaPagamentosAtividade() {
                         </Alert>
                     )}
 
+                    {!dadosEscoteiro.inadimplente && possuiAtividadeAtrasada && (
+                        <Alert severity="warning">
+                            Este escoteiro está com as <strong>mensalidades em dia</strong> (liberado para pagar), porém possui{' '}
+                            <strong>atividade(s) com pagamento em atraso</strong> abaixo.
+                        </Alert>
+                    )}
+
                     {dadosEscoteiro.atividades.length === 0 ? (
                         <Alert severity="info">Este escoteiro não possui inscrições em atividades pagas.</Alert>
                     ) : (
@@ -551,7 +624,7 @@ export default function PaginaPagamentosAtividade() {
             )}
 
             <Dialog open={atividadePagar !== null} onClose={() => setAtividadePagar(null)} maxWidth="xs" fullWidth>
-                <form onSubmit={handleConfirmarPagamento}>
+                <form onSubmit={handleConfirmarPagamento} noValidate>
                     <DialogTitle>Pagamento de Atividade — {atividadePagar?.atividadeNome}</DialogTitle>
                     <DialogContent>
                         <Stack spacing={2} sx={{ mt: 1 }}>
@@ -596,13 +669,16 @@ export default function PaginaPagamentosAtividade() {
                                 onChange={(e) => {
                                     setValorRecebido(e.target.value)
                                     setConfirmouDivergencia(false)
+                                    setErroValor('')
                                     setErroModal('')
                                 }}
+                                error={Boolean(erroValor)}
+                                helperText={erroValor}
                                 required
                                 fullWidth
                             />
 
-                            {temDivergencia && (
+                            {temDivergencia && !erroValor && (
                                 <Alert severity={diferenca < 0 ? 'warning' : 'info'}>
                                     Total aplicado: <strong>{formatarMoeda(totalAplicado)}</strong> | Saldo pendente:{' '}
                                     <strong>{formatarMoeda(valorBase)}</strong> | Diferença:{' '}
@@ -638,8 +714,11 @@ export default function PaginaPagamentosAtividade() {
                                 value={dataPagamento}
                                 onChange={(e) => {
                                     setDataPagamento(e.target.value)
+                                    setErroData('')
                                     setErroModal('')
                                 }}
+                                error={Boolean(erroData)}
+                                helperText={erroData}
                                 required
                                 fullWidth
                             />

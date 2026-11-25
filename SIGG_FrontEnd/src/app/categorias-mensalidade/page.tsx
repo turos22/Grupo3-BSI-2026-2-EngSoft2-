@@ -51,6 +51,9 @@ export default function PaginaCategoriasMensalidade() {
     const [salvando, setSalvando] = useState(false)
     const [erro, setErro] = useState('')
     const [erroModal, setErroModal] = useState('')
+    const [erroDescricao, setErroDescricao] = useState('')
+    const [erroValor, setErroValor] = useState('')
+    const [erroQtdIrmao, setErroQtdIrmao] = useState('')
     const [sucesso, setSucesso] = useState('')
 
     const [selecionada, setSelecionada] = useState<CategoriaMensalidade | null>(null)
@@ -102,6 +105,9 @@ export default function PaginaCategoriasMensalidade() {
         setQtdIrmao('0')
         setErro('')
         setErroModal('')
+        setErroDescricao('')
+        setErroValor('')
+        setErroQtdIrmao('')
         setSucesso('')
         setModalAberto(true)
     }
@@ -113,6 +119,9 @@ export default function PaginaCategoriasMensalidade() {
         setQtdIrmao(String(item.qtd_irmao ?? 0))
         setErro('')
         setErroModal('')
+        setErroDescricao('')
+        setErroValor('')
+        setErroQtdIrmao('')
         setSucesso('')
         setModalAberto(true)
     }
@@ -121,25 +130,41 @@ export default function PaginaCategoriasMensalidade() {
         e.preventDefault()
         setErro('')
         setErroModal('')
+        setErroDescricao('')
+        setErroValor('')
+        setErroQtdIrmao('')
         setSucesso('')
+
+        let invalido = false
 
         const descLimpa = descricao.trim()
         if (!descLimpa) {
-            setErroModal('A descrição da categoria de mensalidade é obrigatória.')
-            return
+            setErroDescricao('A descrição da categoria de mensalidade é obrigatória.')
+            invalido = true
+        } else if (descLimpa.length > 100) {
+            setErroDescricao('A descrição deve ter no máximo 100 caracteres.')
+            invalido = true
         }
 
         const valorNum = parseFloat(valor)
-        if (Number.isNaN(valorNum) || valorNum < 0) {
-            setErroModal('Informe um valor válido (maior ou igual a zero).')
-            return
+        if (valor.trim() === '' || Number.isNaN(valorNum)) {
+            setErroValor('Informe o valor da mensalidade.')
+            invalido = true
+        } else if (valorNum < 0) {
+            setErroValor('O valor não pode ser negativo.')
+            invalido = true
         }
 
         const qtdNum = parseInt(qtdIrmao, 10)
-        if (Number.isNaN(qtdNum) || qtdNum < 0) {
-            setErroModal('A quantidade de irmãos não pode ser negativa.')
-            return
+        if (qtdIrmao.trim() === '' || Number.isNaN(qtdNum)) {
+            setErroQtdIrmao('Informe a quantidade de irmãos.')
+            invalido = true
+        } else if (qtdNum < 0) {
+            setErroQtdIrmao('A quantidade de irmãos não pode ser negativa.')
+            invalido = true
         }
+
+        if (invalido) return
 
         setSalvando(true)
         try {
@@ -163,7 +188,12 @@ export default function PaginaCategoriasMensalidade() {
             setSelecionada(null)
             await carregar()
         } catch (err) {
-            setErroModal(extrairMensagemErro(err, 'Erro inesperado ao salvar categoria.'))
+            const msg = extrairMensagemErro(err, 'Erro inesperado ao salvar categoria.')
+            if (msg.toLowerCase().includes('descrição')) {
+                setErroDescricao(msg)
+            } else {
+                setErroModal(msg)
+            }
         } finally {
             setSalvando(false)
         }
@@ -231,7 +261,7 @@ export default function PaginaCategoriasMensalidade() {
             </Box>
 
             <Dialog open={modalAberto} onClose={() => setModalAberto(false)} maxWidth="xs" fullWidth>
-                <form onSubmit={handleSalvar}>
+                <form onSubmit={handleSalvar} noValidate>
                     <DialogTitle>{selecionada ? 'Editar Categoria de Mensalidade' : 'Nova Categoria de Mensalidade'}</DialogTitle>
                     <DialogContent>
                         <Stack spacing={2} sx={{ mt: 1 }}>
@@ -245,9 +275,12 @@ export default function PaginaCategoriasMensalidade() {
                                 value={descricao}
                                 onChange={(e) => {
                                     setDescricao(e.target.value)
+                                    setErroDescricao('')
                                     setErroModal('')
                                 }}
                                 slotProps={{ htmlInput: { maxLength: 100 } }}
+                                error={Boolean(erroDescricao)}
+                                helperText={erroDescricao}
                                 required
                                 fullWidth
                             />
@@ -258,8 +291,11 @@ export default function PaginaCategoriasMensalidade() {
                                 value={valor}
                                 onChange={(e) => {
                                     setValor(e.target.value)
+                                    setErroValor('')
                                     setErroModal('')
                                 }}
+                                error={Boolean(erroValor)}
+                                helperText={erroValor}
                                 required
                                 fullWidth
                             />
@@ -270,8 +306,11 @@ export default function PaginaCategoriasMensalidade() {
                                 value={qtdIrmao}
                                 onChange={(e) => {
                                     setQtdIrmao(e.target.value)
+                                    setErroQtdIrmao('')
                                     setErroModal('')
                                 }}
+                                error={Boolean(erroQtdIrmao)}
+                                helperText={erroQtdIrmao}
                                 required
                                 fullWidth
                             />

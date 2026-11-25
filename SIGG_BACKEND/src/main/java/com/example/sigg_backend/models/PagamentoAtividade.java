@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @SuppressWarnings("unused")
 public class PagamentoAtividade {
@@ -93,8 +94,8 @@ public class PagamentoAtividade {
         return new PagamentoAtividadeDAO().listarFormasPagamento(conexao);
     }
 
-    public Escoteiro[] listarEscoteirosComResumo(Conexao conexao) {
-        return new PagamentoAtividadeDAO().listarEscoteirosComResumo(conexao);
+    public Map<Integer, int[]> resumirPendenciasPorEscoteiro(Conexao conexao) {
+        return new PagamentoAtividadeDAO().resumirPendenciasPorEscoteiro(conexao);
     }
 
     public BigDecimal calcularCreditoDisponivel(Conexao conexao, int escCod) {

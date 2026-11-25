@@ -46,8 +46,12 @@ public class TipoAtividade {
         return new TipoAtividadeDAO().get(conexao, filtro);
     }
 
-    public TipoAtividade buscarPorId(Conexao conexao, int id) {
+    public TipoAtividade buscar(Conexao conexao, int id) {
         return new TipoAtividadeDAO().get(conexao, id);
+    }
+
+    public TipoAtividade buscarPorId(Conexao conexao, int id) {
+        return buscar(conexao, id);
     }
 
     public boolean possuiVinculos(Conexao conexao, int id) {

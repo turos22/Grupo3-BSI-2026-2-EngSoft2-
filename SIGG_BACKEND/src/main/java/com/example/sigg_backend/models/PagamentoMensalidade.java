@@ -91,10 +91,6 @@ public class PagamentoMensalidade {
         return new PagamentoMensalidadeDAO().listarFormasPagamento(conexao);
     }
 
-    public Escoteiro[] listarEscoteirosComResumo(Conexao conexao) {
-        return new PagamentoMensalidadeDAO().listarEscoteirosComResumo(conexao);
-    }
-
     public BigDecimal calcularCreditoDisponivel(Conexao conexao, int escCod) {
         return new PagamentoMensalidadeDAO().calcularCreditoDisponivel(conexao, escCod);
     }
@@ -104,11 +100,11 @@ public class PagamentoMensalidade {
     }
 
     public String buscarMensalidadeAnteriorEmAberto(Conexao conexao) {
-        return new PagamentoMensalidadeDAO().buscarMensalidadeAnteriorEmAberto(conexao, this.escCod, this.crCod);
+        return new PagamentoMensalidadeDAO().buscarMensalidadeAnteriorEmAberto(conexao, this);
     }
 
     public String buscarMensalidadePosteriorComPagamento(Conexao conexao) {
-        return new PagamentoMensalidadeDAO().buscarMensalidadePosteriorComPagamento(conexao, this.escCod, this.crCod);
+        return new PagamentoMensalidadeDAO().buscarMensalidadePosteriorComPagamento(conexao, this);
     }
 
     public List<SituacaoEscoteiro> listarSituacoes(Conexao conexao, Integer troCod) {
