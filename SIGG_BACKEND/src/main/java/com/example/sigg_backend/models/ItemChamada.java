@@ -10,7 +10,7 @@ public class ItemChamada {
     private String nome;
     private String patrulha;
     private String status;
-    private int ativo;
+    private int ativo; // 1 = registro lançado; 0 = lançamento cancelado (status guardado) ou sem registro
     private BigDecimal percentual_ano;
 
     public int getEsc_cod() {

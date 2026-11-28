@@ -39,14 +39,13 @@ export default function FormChamada({ tropa, dataFixa, aoConfirmar, aoCancelar, 
       .then((chamada) => {
         if (!ativo) return
         setItens(chamada.itens)
-        // só registros C (lançamento cancelado) não impedem lançar de novo
-        setJaExiste(chamada.itens.some((i) => i.status !== null && i.status !== 'C'))
+        // só registro ativo impede lançar; lançamento cancelado (ativo = 0) pode ser lançado de novo
+        setJaExiste(chamada.itens.some((i) => i.ativo === 1))
+        // lançamento cancelado volta preenchido com o que estava; quem não tem registro começa presente
         setStatus(Object.fromEntries(
           chamada.itens.map((i) => [
             i.esc_cod,
-            (i.status === 'P' || i.status === 'F' || i.status === 'J'
-              ? i.status
-              : 'P') as StatusPresenca,
+            (i.status === 'P' || i.status === 'F' || i.status === 'J' ? i.status : 'P') as StatusPresenca,
           ])
         ))
         setErro('')
@@ -68,15 +67,11 @@ export default function FormChamada({ tropa, dataFixa, aoConfirmar, aoCancelar, 
       aoConfirmar={confirmar}
       aoCancelar={aoCancelar}
       carregando={carregando}
-      desabilitarOk={
-        (jaExiste && !itens.some((i) => i.ativo === 0)) ||
-        !!erroData ||
-        itens.length === 0
-      }
+      desabilitarOk={jaExiste || !!erroData || itens.length === 0}
       largura="md"
     >
       {erro && <Alert severity="error">{erro}</Alert>}
-      {jaExiste && !itens.some((i) => i.ativo === 0) && !erroData && (
+      {jaExiste && !erroData && (
         <Alert severity="warning">
           Já existe frequência desta tropa nesta data. Para refazer, cancele o lançamento na grade e lance de novo.
         </Alert>
@@ -93,7 +88,7 @@ export default function FormChamada({ tropa, dataFixa, aoConfirmar, aoCancelar, 
         ajuda={`De hoje até ${PRAZO_DIAS} dias atrás`}
       />
       {itens.length === 0 && !erro && !erroData && <span>Nenhum escoteiro ativo nesta tropa.</span>}
-      {!erroData && (!jaExiste || itens.some((i) => i.ativo === 0)) && itens.map((item) => (
+      {!erroData && !jaExiste && itens.map((item) => (
         <Box key={item.esc_cod} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
           <Box>
             <strong>{item.nome}</strong>

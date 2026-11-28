@@ -2042,8 +2042,9 @@ COMMIT;
 -- * frequencia: é a presença do escoteiro numa data, sem depender de atividade_especial;
 --   as linhas novas gravam atividade_especial_atv_cod NULL.
 -- * frequencia: um único registro por escoteiro e data.
--- * frequencia.freq_status ganha 'C' = lançamento cancelado, pendente de lançamento (não conta no percentual;
---   é sobrescrito quando a chamada é lançada de novo). Sem DDL: a coluna é VARCHAR(1) sem CHECK.
+-- * frequencia.freq_ativo: cancelar um lançamento desativa os registros (freq_ativo = 0) sem apagar nem trocar o
+--   status, para a chamada ser editada já preenchida e lançada de novo; desativado não conta no percentual.
+--   ('C' em freq_status é legado de cancelamentos anteriores à coluna.)
 -- ============================================================================
 BEGIN;
 
@@ -2057,8 +2058,9 @@ BEGIN
     END IF;
 END $$;
 
-ALTER TABLE frequencia ADD COLUMN freq_ativo int4 default 1
+-- freq_ativo: 1 = lançada; 0 = lançamento cancelado. O status P/F/J fica guardado para a edição vir preenchida.
+ALTER TABLE frequencia ADD COLUMN IF NOT EXISTS freq_ativo int4 NOT NULL DEFAULT 1;
+-- cancelamentos feitos antes desta coluna gravavam o status C: passam a ser registros desativados
+UPDATE frequencia SET freq_ativo = 0 WHERE freq_status = 'C' AND freq_ativo = 1;
 
 COMMIT;
-
-

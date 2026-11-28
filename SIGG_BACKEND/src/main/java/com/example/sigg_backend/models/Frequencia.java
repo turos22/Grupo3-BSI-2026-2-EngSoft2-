@@ -7,17 +7,15 @@ import com.example.sigg_backend.db.dao.FrequenciaDAO;
 import com.example.sigg_backend.db.util.Conexao;
 
 // Presença de um escoteiro numa data: P presente, F falta, J falta justificada.
-// C = lançamento cancelado, pendente de lançamento: não conta no percentual e é sobrescrito quando a chamada é lançada de novo.
+// Cancelar o lançamento desativa o registro (freq_ativo = 0) e guarda o status; lançar de novo atualiza e reativa.
 public class Frequencia {
 
-    public static final Set<String> STATUS_VALIDOS = Set.of("P", "F", "J"); // o que se lança; C só o cancelamento grava
-    public static final String CANCELADO = "C";
+    public static final Set<String> STATUS_VALIDOS = Set.of("P", "F", "J");
 
     private int freq_cod;
     private int esc_cod;
     private LocalDate data;
     private String status;
-    private int ativo;
 
     public Frequencia() {
     }
@@ -63,13 +61,5 @@ public class Frequencia {
 
     public void setStatus(String status) {
         this.status = status;
-    }
-
-    public int getAtivo() {
-        return ativo;
-    }
-
-    public void setAtivo(int ativo) {
-        this.ativo = ativo;
     }
 }
