@@ -24,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.jayway.jsonpath.JsonPath;
 
 // Dump: Davi (esc 2012) inadimplente com 3 mensalidades em aberto; Enzo (2018) em dia no cadastro mas com outubro
-// vencida (PENDENTE); Pedro (2007) em dia, com a mensalidade 01/2026 paga (conta a receber 1).
+// vencida (PENDENTE); Pedro (2007) em dia, com as mensalidades de 2026 pagas.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -114,9 +114,18 @@ class SituacaoFinanceiraTest {
         marcar(99999).andExpect(status().isNotFound());
     }
 
+    // O estorno segue a ordem do mais recente para o mais antigo (regra do estorno): usa a última mensalidade paga do Pedro
+    private int ultimaMensalidadePagaDoPedro() {
+        return jdbc.queryForObject("SELECT cr.cr_cod FROM mensalidade me"
+                + " JOIN contas_receber cr ON cr.mensalidade_mens_cod = me.mens_cod AND cr.atividade_especial_atv_cod = 1"
+                + " JOIN pagamento pg ON pg.contas_receber_cr_cod = cr.cr_cod"
+                + " WHERE me.escoteiro_esc_cod = 2007 AND pg.pg_valor_pago > 0"
+                + " ORDER BY me.mens_ano DESC, me.mens_mes DESC LIMIT 1", Integer.class);
+    }
+
     @Test
     void estornoReabreAMensalidadeSemMarcarInadimplente() throws Exception {
-        mvc.perform(delete("/pagamentos-mensalidade/1/estornar")).andExpect(status().isOk());
+        mvc.perform(delete("/pagamentos-mensalidade/" + ultimaMensalidadePagaDoPedro() + "/estornar")).andExpect(status().isOk());
         assertEquals(0, situacaoGravada(2007)); // antes do ajuste o estorno gravava 1 sozinho
         mvc.perform(get("/pagamentos-mensalidade/situacoes")).andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.esc_cod==2007)].situacao").value(hasItem("PENDENTE")));

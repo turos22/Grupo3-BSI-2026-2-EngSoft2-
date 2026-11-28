@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
+import org.springframework.test.util.AopTestUtils;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sigg_backend.db.util.Conexao;
@@ -37,8 +38,12 @@ class ConexaoUnicaTest {
 
     @Test
     void todosOsControllersRecebemAMesmaInstanciaDeConexao() throws Exception {
-        // só os controllers do projeto (o contexto também tem controllers do próprio Spring, como o de erro)
-        Map<String, Object> controllers = new java.util.TreeMap<>(contexto.getBeansWithAnnotation(RestController.class));
+        // só os controllers do projeto (o contexto também tem controllers do próprio Spring, como o de erro).
+        // Controller com @Transactional chega como proxy CGLIB, cujos campos declarados não incluem os da classe
+        // original: por isso lemos o objeto de verdade por trás do proxy.
+        Map<String, Object> controllers = new java.util.TreeMap<>();
+        contexto.getBeansWithAnnotation(RestController.class)
+                .forEach((nome, bean) -> controllers.put(nome, AopTestUtils.getUltimateTargetObject(bean)));
         controllers.values().removeIf(c -> !c.getClass().getPackageName().equals("com.example.sigg_backend.controllers"));
         int comConexao = 0;
         for (Map.Entry<String, Object> controller : controllers.entrySet()) {

@@ -10,9 +10,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.example.sigg_backend.db.util.Conexao;
+import com.example.sigg_backend.controllers.PagamentoMensalidadeController;
 import com.example.sigg_backend.facade.AcessoNegadoException;
-import com.example.sigg_backend.facade.PagamentoMensalidadeFacade;
 
 // Segurança ligada. Contas do dump: 4 = financeira, 7 = chefe, 13 = responsável. Marcar inadimplência é do financeiro.
 @SpringBootTest(properties = "sigg.seguranca.ativa=true")
@@ -20,9 +19,7 @@ import com.example.sigg_backend.facade.PagamentoMensalidadeFacade;
 class PermissaoDeSituacaoFinanceiraTest {
 
     @Autowired
-    PagamentoMensalidadeFacade facade;
-    @Autowired
-    Conexao conexao;
+    PagamentoMensalidadeController controller;
     @Autowired
     JdbcTemplate jdbc;
 
@@ -34,22 +31,22 @@ class PermissaoDeSituacaoFinanceiraTest {
     @Test
     void financeiroMarcaInadimplente() {
         ComoUsuario.entrar(4, "FINANCEIRO");
-        facade.marcarInadimplente(conexao, 2018);
+        controller.marcarInadimplente(2018);
         assertEquals(1, jdbc.queryForObject("SELECT esc_sit_fin FROM escoteiro WHERE esc_cod = 2018", Integer.class));
     }
 
     @Test
     void chefeEResponsavelNaoMarcamInadimplente() {
         ComoUsuario.entrar(7, "CHEFE");
-        assertThrows(AcessoNegadoException.class, () -> facade.marcarInadimplente(conexao, 2018));
+        assertThrows(AcessoNegadoException.class, () -> controller.marcarInadimplente(2018));
         ComoUsuario.entrar(13, "RESPONSAVEL");
-        assertThrows(AcessoNegadoException.class, () -> facade.marcarInadimplente(conexao, 2018));
+        assertThrows(AcessoNegadoException.class, () -> controller.marcarInadimplente(2018));
         assertEquals(0, jdbc.queryForObject("SELECT esc_sit_fin FROM escoteiro WHERE esc_cod = 2018", Integer.class));
     }
 
     @Test
     void responsavelNaoListaSituacoes() {
         ComoUsuario.entrar(13, "RESPONSAVEL");
-        assertThrows(AcessoNegadoException.class, () -> facade.listarSituacoes(conexao, null));
+        assertThrows(AcessoNegadoException.class, () -> controller.listarSituacoes(null));
     }
 }

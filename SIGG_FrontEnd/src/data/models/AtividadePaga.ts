@@ -1,4 +1,4 @@
-// Formato de GET/POST /atividades-pagas (AtividadePagaController) — RF_F5
+// Formato de GET/POST/PUT /atividades-pagas (AtividadePagaController) — RF_F5
 export default interface AtividadePaga {
   codigo: number
   nome: string

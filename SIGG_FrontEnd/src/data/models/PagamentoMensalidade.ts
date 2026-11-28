@@ -1,5 +1,20 @@
 export type SituacaoParcelaMensalidade = 'ABERTA' | 'PARCIAL' | 'ATRASADA' | 'PAGA'
 
+export interface FormaPagamento {
+    tp_cod: number
+    tp_desc: string
+}
+
+export interface LancamentoPagamentoMensalidade {
+    pgCod: number
+    dataPagamento: string | null
+    valorPago: number
+    descricao: string | null
+    formaPagamentoCod: number
+    formaPagamentoDesc: string | null
+    podeEstornar: boolean
+}
+
 export interface PagamentoMensalidade {
     id: number
     crCod: number
@@ -29,12 +44,8 @@ export interface SituacaoFinanceiraEscoteiro {
     categoria: string
     valorCategoria: number
     inadimplente: boolean
+    creditoDisponivel?: number
     mensalidades: PagamentoMensalidade[]
-}
-
-export interface FormaPagamento {
-    tp_cod: number
-    tp_desc: string
 }
 
 export interface ReciboPagamentoMensalidade {
@@ -44,6 +55,7 @@ export interface ReciboPagamentoMensalidade {
     matricula: number
     referencia: string
     valorDevido: number
+    creditoUtilizado?: number
     valorPago: number
     diferenca: number
     observacao: string

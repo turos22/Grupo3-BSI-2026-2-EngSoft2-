@@ -1,14 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
+import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Divider from '@mui/material/Divider'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
 import Stack from '@mui/material/Stack'
@@ -23,6 +26,7 @@ import type { SituacaoEscoteiro, SituacaoFinanceira } from '@/data/models/Situac
 import type Tropa from '@/data/models/Tropa'
 import type {
     FormaPagamento,
+    LancamentoPagamentoMensalidade,
     PagamentoMensalidade,
     ReciboPagamentoMensalidade,
     SituacaoFinanceiraEscoteiro,
@@ -32,6 +36,7 @@ import {
     buscarFormasPagamento,
     consultarSituacaoFinanceiraEscoteiro,
     estornarPagamentoMensalidade,
+    listarLancamentosMensalidade,
     listarSituacoes,
     marcarInadimplente,
     registrarPagamentoMensalidade,
@@ -70,6 +75,23 @@ const COR_FINANCEIRO: Record<SituacaoFinanceira, 'success' | 'warning' | 'error'
 
 const TODAS = 0
 
+function dataHojeIso(): string {
+    const hoje = new Date()
+    const ano = hoje.getFullYear()
+    const mes = String(hoje.getMonth() + 1).padStart(2, '0')
+    const dia = String(hoje.getDate()).padStart(2, '0')
+    return `${ano}-${mes}-${dia}`
+}
+
+function chaveReferencia(ref?: string): number {
+    if (!ref) return 0
+    const partes = ref.split('/')
+    if (partes.length !== 2) return 0
+    const mes = parseInt(partes[0], 10) || 0
+    const ano = parseInt(partes[1], 10) || 0
+    return ano * 100 + mes
+}
+
 const colunasEscoteiros: ColunaGrade<SituacaoEscoteiro>[] = [
     { id: 'nome', titulo: 'Nome', valor: (e) => e.nome },
     { id: 'cpf', titulo: 'CPF', valor: (e) => e.cpf, renderizar: (e) => formatarCpf(e.cpf) },
@@ -85,7 +107,6 @@ const colunasEscoteiros: ColunaGrade<SituacaoEscoteiro>[] = [
     },
 ]
 
-// A busca é feita sobre a lista já carregada: nome, CPF (com ou sem máscara) ou matrícula
 function combina(e: SituacaoEscoteiro, termo: string): boolean {
     const t = termo.trim().toLowerCase()
     if (!t) return true
@@ -110,15 +131,26 @@ export default function PaginaPagamentosMensalidade() {
 
     const [carregando, setCarregando] = useState(false)
     const [erro, setErro] = useState('')
+    const [erroModal, setErroModal] = useState('')
+    const [erroValor, setErroValor] = useState('')
+    const [erroData, setErroData] = useState('')
     const [sucesso, setSucesso] = useState('')
 
+    // Modal de Registrar Pagamento
     const [parcelaPagar, setParcelaPagar] = useState<PagamentoMensalidade | null>(null)
     const [valorRecebido, setValorRecebido] = useState('')
+    const [usarCredito, setUsarCredito] = useState(false)
     const [formaPagamentoCod, setFormaPagamentoCod] = useState<number>(2)
-    const [dataPagamento, setDataPagamento] = useState(() => new Date().toISOString().slice(0, 10))
+    const [dataPagamento, setDataPagamento] = useState(() => dataHojeIso())
     const [confirmouDivergencia, setConfirmouDivergencia] = useState(false)
 
-    const [parcelaEstornar, setParcelaEstornar] = useState<PagamentoMensalidade | null>(null)
+    // Modal de Histórico de Pagamentos Realizados e Estorno da Mensalidade
+    const [parcelaHistorico, setParcelaHistorico] = useState<PagamentoMensalidade | null>(null)
+    const [lancamentos, setLancamentos] = useState<LancamentoPagamentoMensalidade[]>([])
+    const [carregandoLancamentos, setCarregandoLancamentos] = useState(false)
+    const [erroHistorico, setErroHistorico] = useState('')
+    const [lancamentoConfirmarEstorno, setLancamentoConfirmarEstorno] = useState<LancamentoPagamentoMensalidade | null>(null)
+
     const [recibo, setRecibo] = useState<ReciboPagamentoMensalidade | null>(null)
 
     const carregarListaInicial = () => {
@@ -154,9 +186,11 @@ export default function PaginaPagamentosMensalidade() {
         try {
             const dados = await consultarSituacaoFinanceiraEscoteiro(escCod)
             setSituacao(dados)
+            return dados
         } catch (err) {
             setSituacao(null)
             setErro(mensagemDeErro(err, 'Erro ao consultar situação financeira do escoteiro.'))
+            return null
         } finally {
             setCarregando(false)
         }
@@ -199,24 +233,119 @@ export default function PaginaPagamentosMensalidade() {
         carregarListaInicial()
     }
 
+    const abertas = useMemo(() => {
+        const lista = situacao?.mensalidades.filter((m) => m.situacao !== 'PAGA' && Number(m.saldo ?? 0) > 0) ?? []
+        return [...lista].sort((a, b) => chaveReferencia(a.referencia) - chaveReferencia(b.referencia) || a.crCod - b.crCod)
+    }, [situacao])
+
+    const pagas = useMemo(() => {
+        const lista = situacao?.mensalidades.filter((m) => m.situacao === 'PAGA' || Number(m.saldo ?? 0) <= 0) ?? []
+        return [...lista].sort((a, b) => chaveReferencia(b.referencia) - chaveReferencia(a.referencia) || b.crCod - a.crCod)
+    }, [situacao])
+
+    const primeiraAberta = abertas.length > 0 ? abertas[0] : null
+
+    const ultimaComPagamento = useMemo(() => {
+        const comPagto = (situacao?.mensalidades ?? []).filter((m) => Number(m.valorPago ?? 0) > 0)
+        if (comPagto.length === 0) return null
+        return [...comPagto].sort(
+            (a, b) => chaveReferencia(b.referencia) - chaveReferencia(a.referencia) || b.crCod - a.crCod
+        )[0]
+    }, [situacao])
+
+    const creditoDisponivel = Number(situacao?.creditoDisponivel ?? 0)
+
     const abrirModalPagamento = (item: PagamentoMensalidade) => {
+        if (primeiraAberta && item.crCod !== primeiraAberta.crCod) {
+            setSucesso('')
+            setErro(
+                `Não é permitido pagar a mensalidade ${item.referencia} enquanto houver pendências na mensalidade anterior (${primeiraAberta.referencia}). Quite a mais antiga primeiro.`
+            )
+            return
+        }
         setParcelaPagar(item)
-        setValorRecebido(Number(item.saldo).toFixed(2))
+        setUsarCredito(false)
+        setValorRecebido(Number(item.saldo ?? 0).toFixed(2))
         setFormaPagamentoCod(2)
-        setDataPagamento(new Date().toISOString().slice(0, 10))
+        setDataPagamento(dataHojeIso())
         setConfirmouDivergencia(false)
         setErro('')
+        setErroModal('')
+        setErroValor('')
+        setErroData('')
         setSucesso('')
     }
 
-    const valorNumerico = parseFloat(valorRecebido) || 0
-    const saldoDevido = parcelaPagar ? Number(parcelaPagar.saldo) : 0
-    const diferenca = Number((valorNumerico - saldoDevido).toFixed(2))
-    const temDivergencia = parcelaPagar !== null && Math.abs(diferenca) >= 0.01
+    const abrirModalHistoricoPagamentos = async (item: PagamentoMensalidade) => {
+        setParcelaHistorico(item)
+        setErroHistorico('')
+        setErro('')
+        setSucesso('')
+        setCarregandoLancamentos(true)
+        try {
+            const lista = await listarLancamentosMensalidade(item.crCod)
+            setLancamentos(lista)
+        } catch (err) {
+            setLancamentos([])
+            setErroHistorico(mensagemDeErro(err, 'Não foi possível carregar os pagamentos realizados nesta mensalidade.'))
+        } finally {
+            setCarregandoLancamentos(false)
+        }
+    }
+
+    const saldoDevido = parcelaPagar ? Number(parcelaPagar.saldo ?? 0) : 0
+    const creditoAplicado = usarCredito ? Math.min(creditoDisponivel, saldoDevido) : 0
+    const valorNumerico = parseFloat(valorRecebido)
+    const valorNumericoSeguro = Number.isNaN(valorNumerico) ? 0 : valorNumerico
+    const totalAplicado = Number((valorNumericoSeguro + creditoAplicado).toFixed(2))
+    const diferenca = Number((totalAplicado - saldoDevido).toFixed(2))
+    const temDivergencia = parcelaPagar !== null && !Number.isNaN(valorNumerico) && Math.abs(diferenca) >= 0.01
+
+    const handleAlternarCredito = (marcado: boolean) => {
+        setUsarCredito(marcado)
+        setConfirmouDivergencia(false)
+        setErroModal('')
+        setErroValor('')
+        if (marcado) {
+            const abatimento = Math.min(creditoDisponivel, saldoDevido)
+            const restante = Math.max(0, saldoDevido - abatimento)
+            setValorRecebido(restante.toFixed(2))
+        } else {
+            setValorRecebido(saldoDevido.toFixed(2))
+        }
+    }
 
     const handleConfirmarPagamento = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!parcelaPagar || !situacao) return
+
+        setErroValor('')
+        setErroData('')
+        setErroModal('')
+
+        let invalido = false
+
+        if (valorRecebido.trim() === '' || Number.isNaN(valorNumerico)) {
+            setErroValor('Informe o valor recebido.')
+            invalido = true
+        } else if (valorNumerico < 0) {
+            setErroValor('O valor recebido não pode ser negativo.')
+            invalido = true
+        } else if (valorNumerico === 0 && creditoAplicado === 0) {
+            setErroValor('O valor recebido deve ser maior que zero.')
+            invalido = true
+        }
+
+        const hojeIso = dataHojeIso()
+        if (!dataPagamento) {
+            setErroData('Informe a data do pagamento.')
+            invalido = true
+        } else if (dataPagamento > hojeIso) {
+            setErroData('A data do pagamento não pode ser futura (superior à data de hoje).')
+            invalido = true
+        }
+
+        if (invalido) return
 
         if (temDivergencia && !confirmouDivergencia) {
             setConfirmouDivergencia(true)
@@ -227,9 +356,10 @@ export default function PaginaPagamentosMensalidade() {
         setErro('')
         try {
             const resp = await registrarPagamentoMensalidade(parcelaPagar.crCod, {
-                valorRecebido: valorNumerico,
+                valorRecebido: valorNumericoSeguro,
                 formaPagamentoCod,
                 dataPagamento,
+                creditoUtilizado: creditoAplicado > 0 ? creditoAplicado : undefined,
             })
             setSucesso(resp.mensagem)
             setRecibo(resp.recibo)
@@ -237,64 +367,79 @@ export default function PaginaPagamentosMensalidade() {
             await carregarSituacao(situacao.esc_cod)
             carregarListaInicial()
         } catch (err) {
-            setErro(mensagemDeErro(err, 'Não foi possível registrar o pagamento.'))
+            setErroModal(mensagemDeErro(err, 'Não foi possível registrar o pagamento.'))
         } finally {
             setCarregando(false)
         }
     }
 
     const handleConfirmarEstorno = async () => {
-        if (!parcelaEstornar || !situacao) return
-        const alvo = parcelaEstornar
-        setParcelaEstornar(null)
-        setCarregando(true)
+        if (!parcelaHistorico || !lancamentoConfirmarEstorno || !situacao) return
+        const crCodAlvo = parcelaHistorico.crCod
+        const pgCodAlvo = lancamentoConfirmarEstorno.pgCod
+        setLancamentoConfirmarEstorno(null)
+        setCarregandoLancamentos(true)
+        setErroHistorico('')
         setErro('')
         setSucesso('')
 
         try {
-            const resp = await estornarPagamentoMensalidade(alvo.crCod)
+            const resp = await estornarPagamentoMensalidade(crCodAlvo, pgCodAlvo)
             setSucesso(resp.mensagem)
-            await carregarSituacao(situacao.esc_cod)
+            const dadosAtualizados = await carregarSituacao(situacao.esc_cod)
             carregarListaInicial()
+            const listaRestante = await listarLancamentosMensalidade(crCodAlvo)
+            setLancamentos(listaRestante)
+            const mensAtualizada = dadosAtualizados?.mensalidades.find((m) => m.crCod === crCodAlvo) ?? null
+            if (!mensAtualizada || listaRestante.length === 0) {
+                setParcelaHistorico(null)
+            } else {
+                setParcelaHistorico(mensAtualizada)
+            }
         } catch (err) {
-            setErro(mensagemDeErro(err, 'Não foi possível estornar o pagamento.'))
+            setErroHistorico(mensagemDeErro(err, 'Não foi possível estornar o pagamento selecionado.'))
         } finally {
-            setCarregando(false)
+            setCarregandoLancamentos(false)
         }
     }
+
+    const bloqueadoEstornoPorCompetenciaPosterior =
+        parcelaHistorico !== null &&
+        ultimaComPagamento !== null &&
+        parcelaHistorico.crCod !== ultimaComPagamento.crCod
 
     const colunasMensalidades: ColunaGrade<PagamentoMensalidade>[] = [
         { id: 'referencia', titulo: 'Referência', valor: (m) => m.referencia },
         {
             id: 'vencimento',
             titulo: 'Vencimento',
-            valor: (m) => m.dataVencimento,
+            valor: (m) => m.dataVencimento ?? '',
             renderizar: (m) => (m.dataVencimento ? formatarData(m.dataVencimento) : '—'),
         },
         {
             id: 'valorDevido',
             titulo: 'Valor Devido',
-            valor: (m) => m.valorDevido,
-            renderizar: (m) => formatarMoeda(m.valorDevido),
+            valor: (m) => Number(m.valorDevido ?? 0),
+            renderizar: (m) => formatarMoeda(Number(m.valorDevido ?? 0)),
             alinhamento: 'right',
         },
         {
             id: 'valorPago',
             titulo: 'Valor Pago',
-            valor: (m) => m.valorPago,
-            renderizar: (m) => formatarMoeda(m.valorPago),
+            valor: (m) => Number(m.valorPago ?? 0),
+            renderizar: (m) => formatarMoeda(Number(m.valorPago ?? 0)),
             alinhamento: 'right',
         },
         {
             id: 'saldo',
             titulo: 'Saldo',
-            valor: (m) => m.saldo,
-            renderizar: (m) => formatarMoeda(m.saldo),
+            valor: (m) => Number(m.saldo ?? 0),
+            renderizar: (m) => formatarMoeda(Number(m.saldo ?? 0)),
             alinhamento: 'right',
         },
         {
             id: 'forma',
-            titulo: 'Forma / Data Pgto',
+            titulo: 'Último Pgto',
             valor: (m) => m.formaPagamentoDesc ?? '',
             renderizar: (m) =>
                 m.dataPagamento ? `${m.formaPagamentoDesc ?? 'Pago'} (${formatarData(m.dataPagamento)})` : '—',
@@ -304,32 +449,62 @@ export default function PaginaPagamentosMensalidade() {
             titulo: 'Situação',
             valor: (m) => m.situacao,
             renderizar: (m) => (
-                <Chip size="small" variant="outlined" color={COR_SITUACAO[m.situacao]} label={ROTULO_SITUACAO[m.situacao]} />
+                <Chip
+                    size="small"
+                    variant="outlined"
+                    color={COR_SITUACAO[m.situacao] ?? 'default'}
+                    label={ROTULO_SITUACAO[m.situacao] ?? m.situacao}
+                />
             ),
         },
         {
             id: 'acoes',
             titulo: 'Ações',
             valor: (m) => m.crCod,
-            renderizar: (m) => (
-                <Stack direction="row" spacing={1}>
-                    {Number(m.saldo) > 0 && (
-                        <Button size="small" variant="contained" color="success" onClick={() => abrirModalPagamento(m)}>
-                            Registrar Pagamento
-                        </Button>
-                    )}
-                    {Number(m.valorPago) > 0 && (
-                        <Button size="small" variant="outlined" color="error" onClick={() => setParcelaEstornar(m)}>
-                            Estornar
-                        </Button>
-                    )}
-                </Stack>
-            ),
+            renderizar: (m) => {
+                const saldoNum = Number(m.saldo ?? 0)
+                const pagoNum = Number(m.valorPago ?? 0)
+                const ehParcial = pagoNum > 0 && saldoNum > 0
+                const bloqueadoPorAnterior = primeiraAberta !== null && m.crCod !== primeiraAberta.crCod
+
+                return (
+                    <Stack direction="row" spacing={1}>
+                        {saldoNum > 0 && (
+                            <Tooltip
+                                title={
+                                    bloqueadoPorAnterior
+                                        ? `Quite primeiro a mensalidade pendente de ${primeiraAberta?.referencia}`
+                                        : ''
+                                }
+                            >
+                                <span>
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        color="success"
+                                        disabled={bloqueadoPorAnterior}
+                                        onClick={() => abrirModalPagamento(m)}
+                                    >
+                                        {ehParcial ? 'Quitar Saldo' : 'Registrar Pagamento'}
+                                    </Button>
+                                </span>
+                            </Tooltip>
+                        )}
+                        {pagoNum > 0 && (
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                color="error"
+                                onClick={() => abrirModalHistoricoPagamentos(m)}
+                            >
+                                Pagamentos / Estornar
+                            </Button>
+                        )}
+                    </Stack>
+                )
+            },
         },
     ]
-
-    const abertas = situacao?.mensalidades.filter((m) => m.situacao !== 'PAGA' && Number(m.saldo ?? 0) > 0) ?? []
-    const pagas = situacao?.mensalidades.filter((m) => m.situacao === 'PAGA' || Number(m.saldo ?? 0) <= 0) ?? []
 
     return (
         <main className="pagina">
@@ -338,8 +513,16 @@ export default function PaginaPagamentosMensalidade() {
                 <p className="subtitulo">Baixa de mensalidades, regularização de inadimplência, estornos e recibos</p>
             </header>
 
-            {erro && <Alert severity="error" sx={{ mb: 2 }}>{erro}</Alert>}
-            {sucesso && <Alert severity="success" sx={{ mb: 2 }}>{sucesso}</Alert>}
+            {!situacao && erro && (
+                <Alert severity="error" onClose={() => setErro('')} sx={{ mb: 2 }}>
+                    {erro}
+                </Alert>
+            )}
+            {!situacao && sucesso && (
+                <Alert severity="success" onClose={() => setSucesso('')} sx={{ mb: 2 }}>
+                    {sucesso}
+                </Alert>
+            )}
 
             <Box
                 component="form"
@@ -370,11 +553,14 @@ export default function PaginaPagamentosMensalidade() {
                     linhas={situacoes.filter((s) => combina(s, busca))}
                     chave={(e) => e.esc_cod}
                     chaveSelecionada={situacao?.esc_cod ?? null}
-                    aoClicarLinha={(e) => carregarSituacao(e.esc_cod)}
+                    aoClicarLinha={(e) => {
+                        setSucesso('')
+                        carregarSituacao(e.esc_cod)
+                    }}
                     linhasPorPagina={8}
                     acoes={(e) =>
                         e.situacao === 'PENDENTE' && (
-                            <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end" }}>
+                            <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
                                 <Button
                                     size="small"
                                     color="error"
@@ -388,7 +574,9 @@ export default function PaginaPagamentosMensalidade() {
                                 </Button>
                                 <Tooltip title="Em breve: envio do alerta por e-mail">
                                     <span>
-                                        <Button size="small" variant="outlined" disabled>Enviar alerta</Button>
+                                        <Button size="small" variant="outlined" disabled>
+                                            Enviar alerta
+                                        </Button>
                                     </span>
                                 </Tooltip>
                             </Stack>
@@ -401,13 +589,29 @@ export default function PaginaPagamentosMensalidade() {
                 aberto={escoteiroInadimplente !== null}
                 titulo="Marcar como inadimplente"
                 rotuloConfirmar="Marcar"
-                mensagem={<>Marcar <strong>{escoteiroInadimplente?.nome}</strong> como inadimplente? Ele tem {escoteiroInadimplente?.mensalidades_abertas} mensalidade(s) em aberto.</>}
+                mensagem={
+                    <>
+                        Marcar <strong>{escoteiroInadimplente?.nome}</strong> como inadimplente? Ele tem{' '}
+                        {escoteiroInadimplente?.mensalidades_abertas} mensalidade(s) em aberto.
+                    </>
+                }
                 aoConfirmar={handleConfirmarInadimplencia}
                 aoCancelar={() => setEscoteiroInadimplente(null)}
             />
 
             {situacao && (
                 <Stack spacing={2.5} sx={{ mt: 2 }}>
+                    {erro && (
+                        <Alert severity="error" onClose={() => setErro('')}>
+                            {erro}
+                        </Alert>
+                    )}
+                    {sucesso && (
+                        <Alert severity="success" onClose={() => setSucesso('')}>
+                            {sucesso}
+                        </Alert>
+                    )}
+
                     <Card variant="outlined">
                         <CardContent sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
                             <div>
@@ -416,15 +620,22 @@ export default function PaginaPagamentosMensalidade() {
                                     CPF: {formatarCpf(situacao.cpf)} | Matrícula: {situacao.esc_cod} | Patrulha: {situacao.patrulha}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    Categoria: <strong>{situacao.categoria}</strong> ({formatarMoeda(situacao.valorCategoria)}/mês)
+                                    Categoria: <strong>{situacao.categoria}</strong> ({formatarMoeda(Number(situacao.valorCategoria ?? 0))}/mês)
                                 </Typography>
                             </div>
-                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                                {creditoDisponivel > 0 && (
+                                    <Chip
+                                        color="info"
+                                        variant="outlined"
+                                        label={`Crédito disponível: ${formatarMoeda(creditoDisponivel)}`}
+                                    />
+                                )}
                                 <Chip
                                     color={situacao.inadimplente ? 'error' : 'success'}
                                     label={situacao.inadimplente ? 'Situação: INADIMPLENTE' : 'Situação: EM DIA'}
                                 />
-                            </Box>
+                            </Stack>
                         </CardContent>
                     </Card>
 
@@ -434,12 +645,19 @@ export default function PaginaPagamentosMensalidade() {
                         </Alert>
                     )}
 
+                    {abertas.length > 1 && primeiraAberta && (
+                        <Alert severity="info">
+                            As mensalidades devem ser quitadas em ordem cronológica. Quite primeiro a competência{' '}
+                            <strong>{primeiraAberta.referencia}</strong> para liberar as seguintes.
+                        </Alert>
+                    )}
+
                     {abertas.length === 0 ? (
                         <Alert severity="info">Não há mensalidades pendentes para este membro.</Alert>
                     ) : (
                         <Grade
                             titulo="Mensalidades em Aberto"
-                            subtitulo={`${abertas.length} pendente(s)`}
+                            subtitulo={`${abertas.length} pendente(s) — da mais antiga para a mais recente`}
                             colunas={colunasMensalidades}
                             linhas={abertas}
                             chave={(m) => m.crCod}
@@ -459,39 +677,69 @@ export default function PaginaPagamentosMensalidade() {
                 </Stack>
             )}
 
+            {/* Modal para Registrar Pagamento */}
             <Dialog open={parcelaPagar !== null} onClose={() => setParcelaPagar(null)} maxWidth="xs" fullWidth>
-                <form onSubmit={handleConfirmarPagamento}>
+                <form onSubmit={handleConfirmarPagamento} noValidate>
                     <DialogTitle>Registrar Pagamento — {parcelaPagar?.referencia}</DialogTitle>
                     <DialogContent>
                         <Stack spacing={2} sx={{ mt: 1 }}>
+                            {erroModal && (
+                                <Alert severity="error" onClose={() => setErroModal('')}>
+                                    {erroModal}
+                                </Alert>
+                            )}
+
                             <Typography variant="body2">
                                 Escoteiro: <strong>{parcelaPagar?.escoteiroNome}</strong>
                                 <br />
-                                Valor Devido: <strong>{formatarMoeda(saldoDevido)}</strong>
+                                Saldo Devido: <strong>{formatarMoeda(saldoDevido)}</strong>
                             </Typography>
+
+                            {creditoDisponivel > 0 && (
+                                <Box sx={{ p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={usarCredito}
+                                                onChange={(e) => handleAlternarCredito(e.target.checked)}
+                                            />
+                                        }
+                                        label={
+                                            <Typography variant="body2">
+                                                Usar crédito disponível ({formatarMoeda(creditoDisponivel)}) — abate{' '}
+                                                <strong>{formatarMoeda(Math.min(creditoDisponivel, saldoDevido))}</strong>
+                                            </Typography>
+                                        }
+                                    />
+                                </Box>
+                            )}
 
                             <TextField
                                 label="Valor Recebido (R$)"
                                 type="number"
-                                slotProps={{ htmlInput: { step: '0.01', min: '0.01' } }}
+                                slotProps={{ htmlInput: { step: '0.01', min: creditoAplicado > 0 ? '0.00' : '0.01' } }}
                                 value={valorRecebido}
                                 onChange={(e) => {
                                     setValorRecebido(e.target.value)
                                     setConfirmouDivergencia(false)
+                                    setErroValor('')
+                                    setErroModal('')
                                 }}
+                                error={Boolean(erroValor)}
+                                helperText={erroValor}
                                 required
                                 fullWidth
                             />
 
-                            {temDivergencia && (
+                            {temDivergencia && !erroValor && (
                                 <Alert severity={diferenca < 0 ? 'warning' : 'info'}>
-                                    Valor recebido: <strong>{formatarMoeda(valorNumerico)}</strong> | Valor devido:{' '}
+                                    Total aplicado: <strong>{formatarMoeda(totalAplicado)}</strong> | Saldo devido:{' '}
                                     <strong>{formatarMoeda(saldoDevido)}</strong> | Diferença:{' '}
                                     <strong>{formatarMoeda(Math.abs(diferenca))}</strong>.
                                     <br />
                                     {diferenca < 0
-                                        ? `O valor recebido é inferior ao valor devido. A diferença de ${formatarMoeda(Math.abs(diferenca))} será mantida em aberto. Deseja continuar?`
-                                        : `O valor recebido é superior ao valor devido. O excedente de ${formatarMoeda(diferenca)} será registrado como crédito. Deseja continuar?`}
+                                        ? `Pagamento parcial: a diferença de ${formatarMoeda(Math.abs(diferenca))} será mantida em aberto na mensalidade ${parcelaPagar?.referencia}. Deseja continuar?`
+                                        : `O valor supera o saldo devido: o excedente de ${formatarMoeda(diferenca)} ficará disponível como crédito. Deseja continuar?`}
                                 </Alert>
                             )}
 
@@ -512,9 +760,18 @@ export default function PaginaPagamentosMensalidade() {
                             <TextField
                                 label="Data do Pagamento"
                                 type="date"
-                                slotProps={{ inputLabel: { shrink: true } }}
+                                slotProps={{
+                                    inputLabel: { shrink: true },
+                                    htmlInput: { max: dataHojeIso() },
+                                }}
                                 value={dataPagamento}
-                                onChange={(e) => setDataPagamento(e.target.value)}
+                                onChange={(e) => {
+                                    setDataPagamento(e.target.value)
+                                    setErroData('')
+                                    setErroModal('')
+                                }}
+                                error={Boolean(erroData)}
+                                helperText={erroData}
                                 required
                                 fullWidth
                             />
@@ -531,12 +788,132 @@ export default function PaginaPagamentosMensalidade() {
                 </form>
             </Dialog>
 
+            {/* Modal para visualizar todos os Pagamentos Realizados na Mensalidade e escolher estornar */}
+            <Dialog
+                open={parcelaHistorico !== null}
+                onClose={() => setParcelaHistorico(null)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>
+                    Pagamentos Realizados — Mensalidade {parcelaHistorico?.referencia}
+                </DialogTitle>
+                <DialogContent>
+                    <Stack spacing={2} sx={{ mt: 1 }}>
+                        {erroHistorico && (
+                            <Alert severity="error" onClose={() => setErroHistorico('')}>
+                                {erroHistorico}
+                            </Alert>
+                        )}
+
+                        {parcelaHistorico && (
+                            <Box sx={{ p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
+                                <Typography variant="body2">
+                                    <strong>Escoteiro:</strong> {parcelaHistorico.escoteiroNome}
+                                </Typography>
+                                <Typography variant="body2">
+                                    <strong>Valor Devido:</strong> {formatarMoeda(Number(parcelaHistorico.valorDevido ?? 0))} |{' '}
+                                    <strong>Total Pago:</strong> {formatarMoeda(Number(parcelaHistorico.valorPago ?? 0))} |{' '}
+                                    <strong>Saldo Restante:</strong> {formatarMoeda(Number(parcelaHistorico.saldo ?? 0))}
+                                </Typography>
+                            </Box>
+                        )}
+
+                        {bloqueadoEstornoPorCompetenciaPosterior && (
+                            <Alert severity="warning">
+                                Esta mensalidade possui competência posterior já paga ({ultimaComPagamento?.referencia}). Para
+                                estornar esta competência, estorne primeiro os pagamentos da mensalidade{' '}
+                                <strong>{ultimaComPagamento?.referencia}</strong>.
+                            </Alert>
+                        )}
+
+                        {!bloqueadoEstornoPorCompetenciaPosterior && lancamentos.length > 1 && (
+                            <Alert severity="info">
+                                Os estornos seguem a ordem do último pagamento realizado para o primeiro. Estorne o lançamento mais
+                                recente para liberar os anteriores.
+                            </Alert>
+                        )}
+
+                        <Divider />
+
+                        {carregandoLancamentos ? (
+                            <Typography variant="body2" color="text.secondary">
+                                Carregando pagamentos...
+                            </Typography>
+                        ) : lancamentos.length === 0 ? (
+                            <Alert severity="info">Nenhum lançamento pago encontrado para esta mensalidade.</Alert>
+                        ) : (
+                            <Stack spacing={1.5}>
+                                {lancamentos.map((lanc, idx) => {
+                                    const liberado = lanc.podeEstornar && !bloqueadoEstornoPorCompetenciaPosterior
+                                    return (
+                                        <Card key={lanc.pgCod} variant="outlined">
+                                            <CardContent
+                                                sx={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    flexWrap: 'wrap',
+                                                    gap: 1.5,
+                                                    py: '12px !important',
+                                                }}
+                                            >
+                                                <Box>
+                                                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                                                        {idx === 0 ? 'Último Pagamento' : `${lancamentos.length - idx}º Pagamento`} —{' '}
+                                                        {formatarMoeda(Number(lanc.valorPago ?? 0))}
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Data: {lanc.dataPagamento ? formatarData(lanc.dataPagamento) : '—'} | Forma:{' '}
+                                                        {lanc.formaPagamentoDesc ?? '—'}
+                                                    </Typography>
+                                                    {lanc.descricao && (
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            {lanc.descricao}
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                                <Tooltip
+                                                    title={
+                                                        bloqueadoEstornoPorCompetenciaPosterior
+                                                            ? `Estorne primeiro a competência posterior (${ultimaComPagamento?.referencia})`
+                                                            : lanc.podeEstornar
+                                                                ? 'Estornar este lançamento'
+                                                                : 'Estorne primeiro o lançamento mais recente acima'
+                                                    }
+                                                >
+                                                    <span>
+                                                        <Button
+                                                            size="small"
+                                                            variant={liberado ? 'contained' : 'outlined'}
+                                                            color="error"
+                                                            disabled={!liberado || carregandoLancamentos}
+                                                            onClick={() => setLancamentoConfirmarEstorno(lanc)}
+                                                        >
+                                                            Estornar
+                                                        </Button>
+                                                    </span>
+                                                </Tooltip>
+                                            </CardContent>
+                                        </Card>
+                                    )
+                                })}
+                            </Stack>
+                        )}
+                    </Stack>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <BotaoCancelar rotulo="Fechar" aoClicar={() => setParcelaHistorico(null)} />
+                </DialogActions>
+            </Dialog>
+
+            {/* Confirmação do estorno do lançamento selecionado */}
             <DialogoConfirmacao
-                aberto={parcelaEstornar !== null}
-                mensagem={`Deseja realmente estornar o pagamento de ${parcelaEstornar ? formatarMoeda(parcelaEstornar.valorPago) : ''} referente à mensalidade de ${parcelaEstornar?.referencia ?? ''}? Esta ação não pode ser desfeita.`}
+                aberto={lancamentoConfirmarEstorno !== null}
+                mensagem={`Deseja confirmar o estorno do lançamento de ${lancamentoConfirmarEstorno ? formatarMoeda(Number(lancamentoConfirmarEstorno.valorPago ?? 0)) : ''} (${lancamentoConfirmarEstorno?.formaPagamentoDesc ?? 'Pagamento'} em ${lancamentoConfirmarEstorno?.dataPagamento ? formatarData(lancamentoConfirmarEstorno.dataPagamento) : '—'}) referente à mensalidade ${parcelaHistorico?.referencia ?? ''}?`}
                 aoConfirmar={handleConfirmarEstorno}
-                aoCancelar={() => setParcelaEstornar(null)}
-                carregando={carregando}
+                aoCancelar={() => setLancamentoConfirmarEstorno(null)}
+                carregando={carregandoLancamentos}
             />
 
             <Dialog open={recibo !== null} onClose={() => setRecibo(null)} maxWidth="sm" fullWidth>
@@ -547,12 +924,29 @@ export default function PaginaPagamentosMensalidade() {
                             <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
                                 {parametrizacao.nomeGrupo} — Recibo Oficial
                             </Typography>
-                            <Typography variant="body2"><strong>Escoteiro:</strong> {recibo.escoteiro} (Matrícula {recibo.matricula})</Typography>
-                            <Typography variant="body2"><strong>CPF:</strong> {formatarCpf(recibo.cpf)}</Typography>
-                            <Typography variant="body2"><strong>Referência:</strong> Mensalidade {recibo.referencia}</Typography>
-                            <Typography variant="body2"><strong>Data do Pagamento:</strong> {formatarData(recibo.dataPagamento)}</Typography>
-                            <Typography variant="body2"><strong>Valor Devido:</strong> {formatarMoeda(recibo.valorDevido)}</Typography>
-                            <Typography variant="body2"><strong>Valor Pago:</strong> {formatarMoeda(recibo.valorPago)}</Typography>
+                            <Typography variant="body2">
+                                <strong>Escoteiro:</strong> {recibo.escoteiro} (Matrícula {recibo.matricula})
+                            </Typography>
+                            <Typography variant="body2">
+                                <strong>CPF:</strong> {formatarCpf(recibo.cpf)}
+                            </Typography>
+                            <Typography variant="body2">
+                                <strong>Referência:</strong> Mensalidade {recibo.referencia}
+                            </Typography>
+                            <Typography variant="body2">
+                                <strong>Data do Pagamento:</strong> {formatarData(recibo.dataPagamento)}
+                            </Typography>
+                            <Typography variant="body2">
+                                <strong>Saldo Devido:</strong> {formatarMoeda(Number(recibo.valorDevido ?? 0))}
+                            </Typography>
+                            {Number(recibo.creditoUtilizado ?? 0) > 0 && (
+                                <Typography variant="body2">
+                                    <strong>Crédito Abatido:</strong> {formatarMoeda(Number(recibo.creditoUtilizado ?? 0))}
+                                </Typography>
+                            )}
+                            <Typography variant="body2">
+                                <strong>Valor Recebido:</strong> {formatarMoeda(Number(recibo.valorPago ?? 0))}
+                            </Typography>
                             {recibo.observacao && (
                                 <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
                                     <strong>Nota Explicativa:</strong> {recibo.observacao}

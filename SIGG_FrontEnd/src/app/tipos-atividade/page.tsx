@@ -20,7 +20,7 @@ import {
 } from '@/data/services/tiposAtividade'
 
 const colunas: ColunaGrade<TipoAtividade>[] = [
-    { id: 'codigo', titulo: 'Código', valor: (t) => t.ta_cod },
+    { id: 'codigo', titulo: 'Código', valor: (t) => t.ta_cod, largura: 110 },
     { id: 'descricao', titulo: 'Descrição', valor: (t) => t.ta_desc },
 ]
 
@@ -39,7 +39,10 @@ function extrairMensagemErro(err: unknown, padrao: string): string {
 export default function PaginaTiposAtividade() {
     const [tipos, setTipos] = useState<TipoAtividade[]>([])
     const [carregando, setCarregando] = useState(true)
+    const [salvando, setSalvando] = useState(false)
     const [erro, setErro] = useState('')
+    const [erroModal, setErroModal] = useState('')
+    const [erroDescricao, setErroDescricao] = useState('')
     const [sucesso, setSucesso] = useState('')
 
     const [selecionado, setSelecionado] = useState<TipoAtividade | null>(null)
@@ -62,10 +65,8 @@ export default function PaginaTiposAtividade() {
         }
     }
 
-    // Carga inicial. Não chama carregar() aqui: ele faz setCarregando(true) de forma síncrona dentro do efeito
-    // (o estado já nasce true). O estado só é atualizado quando a resposta chega.
     useEffect(() => {
-        let ativo = true // evita atualizar o estado depois que a página foi fechada
+        let ativo = true
         buscarTiposAtividade('')
             .then((lista) => {
                 if (ativo) {
@@ -88,14 +89,18 @@ export default function PaginaTiposAtividade() {
         setSelecionado(null)
         setDescricao('')
         setErro('')
+        setErroModal('')
+        setErroDescricao('')
         setSucesso('')
         setModalAberto(true)
     }
 
     const abrirEdicao = (item: TipoAtividade) => {
         setSelecionado(item)
-        setDescricao(item.ta_desc)
+        setDescricao(item.ta_desc ?? '')
         setErro('')
+        setErroModal('')
+        setErroDescricao('')
         setSucesso('')
         setModalAberto(true)
     }
@@ -103,35 +108,56 @@ export default function PaginaTiposAtividade() {
     const handleSalvar = async (e: React.FormEvent) => {
         e.preventDefault()
         setErro('')
+        setErroModal('')
+        setErroDescricao('')
         setSucesso('')
 
+        const descLimpa = descricao.trim()
+        if (!descLimpa) {
+            setErroDescricao('A descrição do tipo de atividade é obrigatória.')
+            return
+        }
+        if (descLimpa.length > 100) {
+            setErroDescricao('A descrição deve ter no máximo 100 caracteres.')
+            return
+        }
+
+        setSalvando(true)
         try {
             if (selecionado) {
                 await alterarTipoAtividade(selecionado.ta_cod, {
                     ta_cod: selecionado.ta_cod,
-                    ta_desc: descricao,
+                    ta_desc: descLimpa,
                 })
                 setSucesso('Tipo de atividade atualizado com sucesso!')
             } else {
-                await cadastrarTipoAtividade({ ta_desc: descricao })
+                await cadastrarTipoAtividade({ ta_desc: descLimpa })
                 setSucesso('Tipo de atividade cadastrado com sucesso!')
             }
             setModalAberto(false)
             setSelecionado(null)
             await carregar()
         } catch (err) {
-            setErro(extrairMensagemErro(err, 'Erro inesperado ao salvar.'))
+            const msg = extrairMensagemErro(err, 'Erro inesperado ao salvar.')
+            if (msg.toLowerCase().includes('descrição')) {
+                setErroDescricao(msg)
+            } else {
+                setErroModal(msg)
+            }
+        } finally {
+            setSalvando(false)
         }
     }
 
     const handleExcluir = async () => {
         if (!selecionado) return
+        const alvo = selecionado
         setConfirmandoExclusao(false)
         setErro('')
         setSucesso('')
 
         try {
-            await apagarTipoAtividade(selecionado.ta_cod)
+            await apagarTipoAtividade(alvo.ta_cod)
             setSucesso('Tipo de atividade excluído com sucesso!')
             setSelecionado(null)
             await carregar()
@@ -147,8 +173,16 @@ export default function PaginaTiposAtividade() {
                 <p className="subtitulo">Gerenciamento dos tipos de atividade</p>
             </header>
 
-            {erro && <Alert severity="error" sx={{ mb: 2 }}>{erro}</Alert>}
-            {sucesso && <Alert severity="success" sx={{ mb: 2 }}>{sucesso}</Alert>}
+            {erro && (
+                <Alert severity="error" onClose={() => setErro('')} sx={{ mb: 2 }}>
+                    {erro}
+                </Alert>
+            )}
+            {sucesso && (
+                <Alert severity="success" onClose={() => setSucesso('')} sx={{ mb: 2 }}>
+                    {sucesso}
+                </Alert>
+            )}
 
             <Box
                 component="form"
@@ -177,15 +211,26 @@ export default function PaginaTiposAtividade() {
             </Box>
 
             <Dialog open={modalAberto} onClose={() => setModalAberto(false)} maxWidth="xs" fullWidth>
-                <form onSubmit={handleSalvar}>
+                <form onSubmit={handleSalvar} noValidate>
                     <DialogTitle>{selecionado ? 'Editar Tipo de Atividade' : 'Novo Tipo de Atividade'}</DialogTitle>
                     <DialogContent>
                         <Stack spacing={2} sx={{ mt: 1 }}>
+                            {erroModal && (
+                                <Alert severity="error" onClose={() => setErroModal('')}>
+                                    {erroModal}
+                                </Alert>
+                            )}
                             <TextField
                                 label="Descrição"
                                 value={descricao}
-                                onChange={(e) => setDescricao(e.target.value)}
+                                onChange={(e) => {
+                                    setDescricao(e.target.value)
+                                    setErroDescricao('')
+                                    setErroModal('')
+                                }}
                                 slotProps={{ htmlInput: { maxLength: 100 } }}
+                                error={Boolean(erroDescricao)}
+                                helperText={erroDescricao}
                                 required
                                 fullWidth
                             />
@@ -193,7 +238,11 @@ export default function PaginaTiposAtividade() {
                     </DialogContent>
                     <DialogActions sx={{ px: 3, pb: 2 }}>
                         <BotaoCancelar rotulo="Cancelar" aoClicar={() => setModalAberto(false)} />
-                        <BotaoOk rotulo={selecionado ? 'Atualizar' : 'Cadastrar'} tipo="submit" />
+                        <BotaoOk
+                            rotulo={selecionado ? 'Atualizar' : 'Cadastrar'}
+                            tipo="submit"
+                            carregando={salvando}
+                        />
                     </DialogActions>
                 </form>
             </Dialog>

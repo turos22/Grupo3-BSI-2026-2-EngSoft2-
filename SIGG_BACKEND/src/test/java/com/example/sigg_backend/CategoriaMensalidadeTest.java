@@ -62,8 +62,9 @@ class CategoriaMensalidadeTest {
         int proximo = jdbc.queryForObject("SELECT max(cat_mens_cod) FROM categoria_mensalidade", Integer.class) + 1;
 
         enviar(post("/categorias-mensalidade"), categoria("Bolsista parcial"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensagem").isNotEmpty());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.cat_mens_cod").value(proximo))
+                .andExpect(jsonPath("$.descricao").value("Bolsista parcial"));
 
         assertEquals(1, contar("SELECT count(*) FROM categoria_mensalidade WHERE cat_mens_cod = ? AND cat_mens_desc = 'Bolsista parcial'", proximo));
     }
