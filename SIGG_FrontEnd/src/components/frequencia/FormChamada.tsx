@@ -39,9 +39,15 @@ export default function FormChamada({ tropa, dataFixa, aoConfirmar, aoCancelar, 
       .then((chamada) => {
         if (!ativo) return
         setItens(chamada.itens)
-        // só registros C (lançamento cancelado) não impedem lançar de novo
-        setJaExiste(chamada.itens.some((i) => i.status !== null && i.status !== 'C'))
-        setStatus(Object.fromEntries(chamada.itens.map((i) => [i.esc_cod, 'P' as StatusPresenca]))) // começa todo mundo presente
+        // só registro ativo impede lançar; lançamento cancelado (ativo = 0) pode ser lançado de novo
+        setJaExiste(chamada.itens.some((i) => i.ativo === 1))
+        // lançamento cancelado volta preenchido com o que estava; quem não tem registro começa presente
+        setStatus(Object.fromEntries(
+          chamada.itens.map((i) => [
+            i.esc_cod,
+            (i.status === 'P' || i.status === 'F' || i.status === 'J' ? i.status : 'P') as StatusPresenca,
+          ])
+        ))
         setErro('')
       })
       .catch((falha: unknown) => ativo && setErro(mensagemDeErro(falha, 'Não foi possível carregar os escoteiros.')))
@@ -66,7 +72,9 @@ export default function FormChamada({ tropa, dataFixa, aoConfirmar, aoCancelar, 
     >
       {erro && <Alert severity="error">{erro}</Alert>}
       {jaExiste && !erroData && (
-        <Alert severity="warning">Já existe frequência desta tropa nesta data. Para refazer, cancele o lançamento na grade e lance de novo.</Alert>
+        <Alert severity="warning">
+          Já existe frequência desta tropa nesta data. Para refazer, cancele o lançamento na grade e lance de novo.
+        </Alert>
       )}
       <CampoData
         rotulo="Data"

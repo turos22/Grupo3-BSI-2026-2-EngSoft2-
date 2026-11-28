@@ -1,6 +1,7 @@
 package com.example.sigg_backend;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,13 @@ class SchemaGestaoTest {
     @Test
     void frequenciaAceitaSemAtividade() {
         assertDoesNotThrow(() -> jdbc.update(INSERT_FREQUENCIA));
+    }
+
+    @Test
+    void frequenciaNovaNasceAtiva() {
+        jdbc.update(INSERT_FREQUENCIA);
+        assertEquals(1, jdbc.queryForObject("SELECT freq_ativo FROM frequencia WHERE escoteiro_esc_cod = 2007"
+                + " AND freq_data = DATE '2026-11-07'", Integer.class));
     }
 
     @Test

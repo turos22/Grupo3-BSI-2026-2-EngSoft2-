@@ -139,37 +139,49 @@ class RegistroDeFrequenciaTest {
                 .content(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "P"))).andExpect(status().isMethodNotAllowed());
     }
 
-    private int comStatus(String data, int tropa, String status) {
+    private int comStatus(String data, int tropa, String status, int ativo) {
         return jdbc.queryForObject("SELECT count(*) FROM frequencia f JOIN escoteiro e ON e.esc_cod = f.escoteiro_esc_cod"
                 + " JOIN membro m ON m.mem_cod = e.mem_cod JOIN patrulha p ON p.pat_cod = e.patrulha_pat_cod2"
                 + " WHERE f.freq_data = DATE '" + data + "' AND p.tropa_tro_cod = ? AND m.mem_dt_fim IS NULL"
-                + " AND f.freq_status = ?", Integer.class, tropa, status);
+                + " AND f.freq_status = ? AND f.freq_ativo = ?", Integer.class, tropa, status, ativo);
     }
 
-    // Cancelar não apaga: os registros ficam com o status C (pendente de lançamento) até serem lançados de novo
+    // Cancelar não apaga nem troca o status: desativa (freq_ativo = 0) e guarda o P/F/J para a edição vir preenchida
     @Test
-    void cancelarDeixaPendenteDeLancamentoEPermiteLancarDeNovo() throws Exception {
+    void cancelarGuardaAsPresencasParaEditarELancarDeNovo() throws Exception {
         registrar(chamada(1, DIA_LIVRE, escoteirosDaTropa(1), "P")).andExpect(status().isCreated());
-        registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "P")).andExpect(status().isCreated());
-        int tropa1Antes = comStatus(DIA_LIVRE, 1, "P");
+        registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "F")).andExpect(status().isCreated());
 
         cancelar(2, DIA_LIVRE).andExpect(status().isOk()).andExpect(jsonPath("$.mensagem").exists());
         assertEquals(8, registros(DIA_LIVRE, 2)); // nada foi apagado
-        assertEquals(8, comStatus(DIA_LIVRE, 2, "C"));
-        assertEquals(tropa1Antes, comStatus(DIA_LIVRE, 1, "P"));
+        assertEquals(8, comStatus(DIA_LIVRE, 2, "F", 0)); // status guardado, registro desativado
+        assertEquals(10, comStatus(DIA_LIVRE, 1, "P", 1)); // a outra tropa não muda
         mvc.perform(get("/frequencias?tropa=2&ano=" + DIA_LIVRE.substring(0, 4))).andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].data").value(DIA_LIVRE))
                 .andExpect(jsonPath("$[0].total").value(0))
+                .andExpect(jsonPath("$[0].presentes").value(0))
                 .andExpect(jsonPath("$[0].pendentes").value(8));
+        // a chamada consultada traz o status de antes do cancelamento: é o que preenche o formulário de edição
         mvc.perform(get("/frequencias/chamada?tropa=2&data=" + DIA_LIVRE)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.itens[?(@.status != 'C')]").isEmpty());
+                .andExpect(jsonPath("$.itens[?(@.status != 'F')]").isEmpty())
+                .andExpect(jsonPath("$.itens[?(@.ativo != 0)]").isEmpty());
         cancelar(2, DIA_LIVRE).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.erro").value("Não há frequência lançada dessa tropa nessa data"));
 
-        registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "F")).andExpect(status().isCreated());
-        assertEquals(8, comStatus(DIA_LIVRE, 2, "F"));
-        assertEquals(0, comStatus(DIA_LIVRE, 2, "C"));
-        assertEquals(8, registros(DIA_LIVRE, 2)); // lançar de novo reaproveita as linhas, não duplica
+        registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "J")).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.itens[?(@.ativo != 1)]").isEmpty());
+        assertEquals(8, comStatus(DIA_LIVRE, 2, "J", 1));
+        assertEquals(8, registros(DIA_LIVRE, 2)); // reaproveita as linhas, não duplica
+        registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "P")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erro").value(MENSAGEM_DUPLICADA)); // lançada de novo, volta a bloquear
+    }
+
+    @Test
+    void chamadaLancadaVemComRegistroAtivo() throws Exception {
+        registrar(chamada(2, DIA_LIVRE, escoteirosDaTropa(2), "P")).andExpect(status().isCreated());
+        mvc.perform(get("/frequencias/chamada?tropa=2&data=" + DIA_LIVRE)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.itens[?(@.ativo != 1)]").isEmpty());
+        assertEquals(8, comStatus(DIA_LIVRE, 2, "P", 1));
     }
 
     @Test
@@ -189,11 +201,12 @@ class RegistroDeFrequenciaTest {
         MvcResult criado = mvc.perform(post("/escoteiros").contentType(MediaType.APPLICATION_JSON).content(escoteiro))
                 .andExpect(status().isCreated()).andReturn();
         int escCod = JsonPath.read(criado.getResponse().getContentAsString(StandardCharsets.UTF_8), "$.esc_cod");
-        // o registro C (lançamento cancelado, pendente) não conta: 2 P sobre 3 lançados
-        String[][] registros = {{"2026-01-10", "P"}, {"2026-01-17", "P"}, {"2026-01-24", "F"}, {"2026-01-31", "C"}};
+        // o registro desativado (lançamento cancelado) não conta: 2 P sobre 3 ativos
+        String[][] registros = {{"2026-01-10", "P", "1"}, {"2026-01-17", "P", "1"}, {"2026-01-24", "F", "1"}, {"2026-01-31", "P", "0"}};
         for (String[] r : registros)
-            jdbc.update("INSERT INTO frequencia (freq_cod, freq_data, freq_status, escoteiro_esc_cod, atividade_especial_atv_cod)"
-                    + " VALUES ((SELECT MAX(freq_cod) + 1 FROM frequencia), DATE '" + r[0] + "', '" + r[1] + "', ?, NULL)", escCod);
+            jdbc.update("INSERT INTO frequencia (freq_cod, freq_data, freq_status, escoteiro_esc_cod, atividade_especial_atv_cod, freq_ativo)"
+                    + " VALUES ((SELECT MAX(freq_cod) + 1 FROM frequencia), DATE '" + r[0] + "', '" + r[1] + "', ?, NULL, "
+                    + r[2] + ")", escCod);
 
         mvc.perform(get("/frequencias/percentuais?tropa=2&ano=2026")).andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.esc_cod==" + escCod + ")].percentual_ano").value(hasItem(66.7)));
